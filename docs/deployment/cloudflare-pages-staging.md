@@ -29,7 +29,7 @@ Cloudflare Pages SPA fallback required for direct navigation.
 
 Create one Cloudflare Pages project through GitHub integration:
 
-1. Select the `milljanerobinson-alt/EIOS` repository.
+1. Select the `milljanerobinson-alt/LLNDAutomate` repository.
 2. Select Vite as the framework preset.
 3. Set the production branch to `main`. In this project, the Cloudflare
    "production branch" is the **non-production staging source**.
@@ -75,24 +75,22 @@ Pages project settings.
 
 ## Supabase Auth configuration
 
-After Cloudflare creates the stable staging hostname, update Supabase Dashboard →
-Authentication → URL Configuration:
+The live staging configuration in Supabase Dashboard → Authentication → URL
+Configuration is:
 
-1. Set **Site URL** to `https://<pages-project>.pages.dev` for this staging phase.
-2. Add exact redirect URLs:
-   - `https://<pages-project>.pages.dev/`
-   - `https://<pages-project>.pages.dev/eios`
-3. Add a preview-host redirect pattern matching the Cloudflare-generated preview
-   hostnames for this project, for example
-   `https://*.<pages-project>.pages.dev/**`.
-4. Retain any required localhost redirect URLs while local testing remains active.
-5. Do not remove existing authorised URLs until their consumers are confirmed retired.
+- **Site URL:** `https://llndautomate.pages.dev/`
+- **Redirect URL:** `https://llndautomate.pages.dev/**`
+- **Local redirect retained:** `http://localhost:5173/**`
+
+Do not remove existing authorised URLs until their consumers are confirmed retired.
+Before authenticated preview testing is introduced, add a redirect pattern for Cloudflare
+preview subdomains such as `https://*.llndautomate.pages.dev/**`.
 
 The application derives OAuth and password-recovery destinations from
 `window.location.origin` and the active product boundary:
 
-- LLND Automate: `https://<pages-project>.pages.dev/`
-- EIOS: `https://<pages-project>.pages.dev/eios`
+- LLND Automate: `https://llndautomate.pages.dev/`
+- EIOS: `https://llndautomate.pages.dev/eios`
 
 For Google or Apple sign-in, the provider console callback normally remains the
 Supabase callback URL
@@ -101,6 +99,30 @@ registered; do not substitute the Pages URL for the provider callback.
 
 Supabase OAuth-server consent continues to enter at `/oauth/consent`, which
 Cloudflare redirects to the EIOS hash route.
+
+## Live staging record
+
+- Staging URL: `https://llndautomate.pages.dev`
+- GitHub repository: `milljanerobinson-alt/LLNDAutomate`
+- Deployment branch: `main`
+- Automatic deployments: enabled
+- Build command: `npm run build`
+- Output directory: `dist`
+- Custom domain: none
+- Hosting boundary: Cloudflare-provided `*.pages.dev` only
+- Required Vite variables configured: `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY`
+
+Read-only verification on 9 August 2026 confirmed HTTP 200 for `/`, `/eios`,
+`/llnd`, `/lln`, and a direct nested path. The deployed JavaScript contains
+resolved Supabase client configuration, and the Supabase Auth settings endpoint
+responded successfully when called with the deployed public client key. No secret
+values were printed or committed.
+
+Interactive browser rendering, console inspection, the Back-to-website click and a
+real preview deployment remain Product Owner/manual checks because the verification
+environment could not install its browser runtime and no unrelated deployment was
+created solely to test previews.
 
 ## Deployment verification
 
