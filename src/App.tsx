@@ -14,7 +14,6 @@ import {
 } from './lib/productContext';
 
 // Layouts
-import { AdminLayout, type AdminPage } from './components/AdminLayout';
 import { CustomerWorkspaceLayout } from './components/CustomerWorkspaceLayout';
 import { EngineeringLayout } from './components/EngineeringLayout';
 
@@ -46,11 +45,14 @@ import { AxcelerateLogPage } from './pages/AxcelerateLogPage';
 import { AxcelerateInboundPage } from './pages/AxcelerateInboundPage';
 import { ValidationPage } from './pages/ValidationPage';
 import { BillingPage } from './pages/BillingPage';
-import { SettingsPage } from './pages/SettingsPage';
 
 // Trainer + Platform workspace dashboards
-import { TrainerDashboardPage } from './pages/workspace/TrainerDashboardPage';
-import { PlatformDashboardPage } from './pages/workspace/PlatformDashboardPage';
+import { CandidateSupportPage } from './pages/workspace/CandidateSupportPage';
+import { UsersPage } from './pages/workspace/UsersPage';
+import { OrganisationPage } from './pages/workspace/OrganisationPage';
+import { CompletionReportsPage } from './pages/workspace/CompletionReportsPage';
+import { TechnicalOverviewPage } from './pages/workspace/TechnicalOverviewPage';
+import { SupportRoutingPage } from './pages/workspace/SupportRoutingPage';
 
 // Engineering
 import { EngineeringControlCentrePage } from './pages/EngineeringControlCentrePage';
@@ -77,7 +79,7 @@ export default function App() {
 
 function Router() {
   const { user, profile, loading, otpVerified } = useAuth();
-  const { hasWorkspace, loading: wsLoading } = useWorkspaceAccess();
+  const { hasWorkspace, primaryWorkspace, loading: wsLoading } = useWorkspaceAccess();
 
   // ─── Product context resolution (synchronous, before first render) ──────────
   // Resolves LLND at / and EIOS at /eios, migrating legacy LLND paths,
@@ -127,7 +129,7 @@ function Router() {
   // EIOS routes must never load at the LLND root; LLND routes must never load under /eios.
   if (product === 'llnd' && isEiosRoute(hash) && route.kind !== 'root' && route.kind !== 'llnd-login') {
     // An EIOS route at the LLND root — reject to an LLND fallback
-    navigateInProduct('llnd', '#/assessment/dashboard');
+    navigateInProduct('llnd', '#/rto-admin/dashboard');
     return <FullScreenLoader />;
   }
   if (product === 'eios' && isLlndRoute(hash) && route.kind !== 'root') {
@@ -196,7 +198,7 @@ function Router() {
       }
       // Post-login redirect respects product context
       if (product === 'llnd') {
-        redirect(workspaceHash('assessment', 'dashboard'));
+        redirect(workspaceHash(primaryWorkspace, getLastPage(primaryWorkspace)));
       } else {
         // EIOS product: never redirect to LLND workspaces (assessment/trainer)
         const eiosWs = resolveEiosWorkspace(getLastWorkspace(), profile, hasWorkspace);
@@ -219,7 +221,7 @@ function Router() {
   // ─── Auth gate for protected workspaces ─────────────────────────────────────
   if (!user || !otpVerified) {
     // LLND Automate product routes → LLND Automate login
-    if (route.kind === 'assessment' || route.kind === 'trainer' || route.kind === 'platform') {
+    if (route.kind === 'administration' || route.kind === 'candidate-support' || route.kind === 'technical') {
       redirect('#/llnd-automate/login');
       return <FullScreenLoader />;
     }
@@ -232,11 +234,11 @@ function Router() {
   if (route.kind === 'engineering') {
     if (product === 'llnd') {
       // Engineering route at the LLND root — reject to an LLND fallback
-      navigateInProduct('llnd', '#/assessment/dashboard');
+      navigateInProduct('llnd', '#/rto-admin/dashboard');
       return <FullScreenLoader />;
     }
     if (profile?.role !== 'admin') {
-      redirect(workspaceHash(primaryWorkspaceFor(profile), 'dashboard'));
+      navigateInProduct('eios', '#/login');
       return <FullScreenLoader />;
     }
     setLastWorkspace('engineering');
@@ -254,65 +256,65 @@ function Router() {
     );
   }
 
-  // ─── Assessment workspace (LLND product only) ───────────────────────────────
-  if (route.kind === 'assessment') {
+  // ─── Administration workspace (LLND product only) ──────────────────────────
+  if (route.kind === 'administration') {
     if (product === 'eios') {
       // Assessment route under /eios — redirect to the LLND root product
       navigateInProduct('llnd', hash);
       return <FullScreenLoader />;
     }
-    if (!hasWorkspace('assessment')) {
-      redirect(workspaceHash(primaryWorkspaceFor(profile), 'dashboard'));
+    if (!hasWorkspace('administration')) {
+      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
       return <FullScreenLoader />;
     }
-    setLastWorkspace('assessment');
-    setLastPage('assessment', route.page);
+    setLastWorkspace('administration');
+    setLastPage('administration', route.page);
     return (
-      <AdminLayout currentPage={route.page as AdminPage} onPageChange={(p) => redirect(workspaceHash('assessment', p))}>
-        <FeatureErrorBoundary featureName="Assessment" routeKey={`assessment.${route.page}`}>
-          {renderAssessmentPage(route.page)}
-        </FeatureErrorBoundary>
-      </AdminLayout>
-    );
-  }
-
-  // ─── Trainer workspace (LLND product only) ──────────────────────────────────
-  if (route.kind === 'trainer') {
-    if (product === 'eios') {
-      navigateInProduct('llnd', hash);
-      return <FullScreenLoader />;
-    }
-    if (!hasWorkspace('trainer')) {
-      redirect(workspaceHash(primaryWorkspaceFor(profile), 'dashboard'));
-      return <FullScreenLoader />;
-    }
-    setLastWorkspace('trainer');
-    setLastPage('trainer', route.page);
-    return (
-      <CustomerWorkspaceLayout workspace="trainer" currentPage={route.page} onPageChange={(p) => redirect(workspaceHash('trainer', p))}>
-        <FeatureErrorBoundary featureName="Trainer" routeKey={`trainer.${route.page}`}>
-          {renderTrainerPage(route.page)}
+      <CustomerWorkspaceLayout workspace="administration" currentPage={route.page} onPageChange={(p) => redirect(workspaceHash('administration', p))}>
+        <FeatureErrorBoundary featureName="Administration" routeKey={`administration.${route.page}`}>
+          {renderAdministrationPage(route.page)}
         </FeatureErrorBoundary>
       </CustomerWorkspaceLayout>
     );
   }
 
-  // ─── RTO administration workspace (LLND product only) ───────────────────────
-  if (route.kind === 'platform') {
+  // ─── Candidate Support workspace (LLND product only) ────────────────────────
+  if (route.kind === 'candidate-support') {
     if (product === 'eios') {
       navigateInProduct('llnd', hash);
       return <FullScreenLoader />;
     }
-    if (!hasWorkspace('platform_admin')) {
-      redirect(workspaceHash(primaryWorkspaceFor(profile), 'dashboard'));
+    if (!hasWorkspace('candidate_support')) {
+      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
       return <FullScreenLoader />;
     }
-    setLastWorkspace('platform_admin');
-    setLastPage('platform_admin', route.page);
+    setLastWorkspace('candidate_support');
+    setLastPage('candidate_support', route.page);
     return (
-      <CustomerWorkspaceLayout workspace="platform_admin" currentPage={route.page} onPageChange={(p) => redirect(workspaceHash('platform_admin', p))}>
-        <FeatureErrorBoundary featureName="Platform" routeKey={`platform.${route.page}`}>
-          {renderPlatformPage(route.page)}
+      <CustomerWorkspaceLayout workspace="candidate_support" currentPage={route.page} onPageChange={(p) => redirect(workspaceHash('candidate_support', p))}>
+        <FeatureErrorBoundary featureName="Candidate Support" routeKey={`candidate-support.${route.page}`}>
+          {renderCandidateSupportPage(route.page)}
+        </FeatureErrorBoundary>
+      </CustomerWorkspaceLayout>
+    );
+  }
+
+  // ─── Technical workspace (LLND product only) ────────────────────────────────
+  if (route.kind === 'technical') {
+    if (product === 'eios') {
+      navigateInProduct('llnd', hash);
+      return <FullScreenLoader />;
+    }
+    if (!hasWorkspace('technical')) {
+      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
+      return <FullScreenLoader />;
+    }
+    setLastWorkspace('technical');
+    setLastPage('technical', route.page);
+    return (
+      <CustomerWorkspaceLayout workspace="technical" currentPage={route.page} onPageChange={(p) => redirect(workspaceHash('technical', p))}>
+        <FeatureErrorBoundary featureName="Technical" routeKey={`technical.${route.page}`}>
+          {renderTechnicalPage(route.page)}
         </FeatureErrorBoundary>
       </CustomerWorkspaceLayout>
     );
@@ -321,7 +323,7 @@ function Router() {
   // Fallback — redirect to product-appropriate default
   if (user && otpVerified) {
     if (product === 'llnd') {
-      redirect(workspaceHash('assessment', 'dashboard'));
+      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
     } else {
       // EIOS product: never redirect to LLND workspaces
       const eiosWs = resolveEiosWorkspace(getLastWorkspace(), profile, hasWorkspace);
@@ -351,7 +353,7 @@ function isOAuthLoginContext(hash: string): boolean {
 // Only allow internal hash-based redirects to prevent open redirect attacks.
 const SAFE_REDIRECT_PREFIXES: Record<Product, string[]> = {
   eios: ['#/oauth/consent', '#/engineering'],
-  llnd: ['#/platform', '#/assessment', '#/trainer'],
+  llnd: ['#/rto-admin', '#/candidate-support', '#/technical'],
 };
 
 function isSafeRedirect(redirect: string, product: Product): boolean {
@@ -378,9 +380,9 @@ type Route =
   | { kind: 'quiz'; token: string }
   | { kind: 'student'; token: string }
   | { kind: 'engineering'; section: string; objectRef: string | null; subPath: string | null }
-  | { kind: 'assessment'; page: string }
-  | { kind: 'trainer'; page: string }
-  | { kind: 'platform'; page: string }
+  | { kind: 'administration'; page: string }
+  | { kind: 'candidate-support'; page: string }
+  | { kind: 'technical'; page: string }
   | { kind: 'llnd-login' }
   | { kind: 'oauth-consent' };
 
@@ -415,22 +417,26 @@ function parseHash(hash: string): Route {
 
   if (parts[0] === 'oauth' && parts[1] === 'consent') return { kind: 'oauth-consent' };
 
-  if (parts[0] === 'assessment' && parts[1]) return { kind: 'assessment', page: parts[1] };
-  if (parts[0] === 'trainer' && parts[1])    return { kind: 'trainer', page: parts[1] };
-  if (parts[0] === 'platform' && parts[1])   return { kind: 'platform', page: parts[1] };
+  if ((parts[0] === 'rto-admin' || parts[0] === 'assessment') && parts[1]) return { kind: 'administration', page: parts[1] };
+  if ((parts[0] === 'candidate-support' || parts[0] === 'trainer') && parts[1]) return { kind: 'candidate-support', page: parts[1] === 'students' ? 'candidates' : parts[1] };
+  if ((parts[0] === 'technical' || parts[0] === 'platform') && parts[1]) return { kind: 'technical', page: parts[1] };
 
   return { kind: 'root' };
 }
 
 // ─── Page renderers ────────────────────────────────────────────────────────────
 
-function renderAssessmentPage(page: string) {
+function renderAdministrationPage(page: string) {
   switch (page) {
     case 'dashboard':         return <DashboardPage />;
+    case 'organisation':      return <OrganisationPage />;
+    case 'users':             return <UsersPage />;
     case 'assessments':       return <AssessmentsPage />;
     case 'qualifications':    return <QualificationsPage />;
     case 'candidates':        return <CandidatesPage />;
+    case 'support-routing':   return <SupportRoutingPage />;
     case 'results':           return <ResultsPage />;
+    case 'completion-reports':return <CompletionReportsPage />;
     case 'support-plans':     return <SupportPlansPage />;
     case 'interventions':     return <InterventionsPage />;
     case 'compliance':        return <CompliancePage />;
@@ -441,38 +447,35 @@ function renderAssessmentPage(page: string) {
     case 'axcelerate-inbound': return <AxcelerateInboundPage />;
     case 'validation':       return <ValidationPage />;
     case 'billing':           return <BillingPage />;
-    case 'settings':          return <SettingsPage />;
+    case 'settings':          return <OrganisationPage />;
     default:                  return <DashboardPage />;
   }
 }
 
-function renderTrainerPage(page: string) {
+function renderCandidateSupportPage(page: string) {
   switch (page) {
-    case 'dashboard':        return <TrainerDashboardPage />;
-    case 'students':         return <TrainerDashboardPage />;
-    case 'awaiting-review':  return <TrainerDashboardPage />;
+    case 'dashboard':        return <CandidateSupportPage view="assigned" />;
+    case 'candidates':       return <CandidateSupportPage view="assigned" />;
+    case 'unassigned-support': return <CandidateSupportPage view="unassigned" />;
+    case 'awaiting-review':  return <CandidateSupportPage view="awaiting_review" />;
     case 'support-plans':    return <SupportPlansPage />;
     case 'interventions':    return <InterventionsPage />;
     case 'results':          return <ResultsPage />;
-    case 'evidence':         return <ResultsPage />;
-    default:                 return <TrainerDashboardPage />;
+    default:                 return <CandidateSupportPage view="assigned" />;
   }
 }
 
-function renderPlatformPage(page: string) {
+function renderTechnicalPage(page: string) {
   switch (page) {
-    case 'dashboard':         return <PlatformDashboardPage />;
-    case 'settings':          return <SettingsPage />;
-    case 'users':             return <SettingsPage />;
-    case 'billing':           return <BillingPage />;
+    case 'dashboard':         return <TechnicalOverviewPage />;
+    case 'axcelerate-integration': return <TechnicalOverviewPage />;
     case 'axcelerate-inbound': return <AxcelerateInboundPage />;
     case 'axcelerate-log':    return <AxcelerateLogPage />;
     case 'email-activity':    return <EmailActivityPage />;
     case 'validation':       return <ValidationPage />;
-    case 'ai-providers':      return <SettingsPage />;
-    case 'feature-flags':     return <SettingsPage />;
-    case 'system-health':     return <PlatformDashboardPage />;
-    default:                  return <PlatformDashboardPage />;
+    case 'mapping':           return <ValidationPage />;
+    case 'settings':          return <TechnicalOverviewPage />;
+    default:                  return <TechnicalOverviewPage />;
   }
 }
 
@@ -482,21 +485,15 @@ function redirect(hash: string) {
   if (window.location.hash !== hash) window.location.hash = hash;
 }
 
-function primaryWorkspaceFor(profile: { role?: string } | null): CustomerWorkspace {
-  if (profile?.role === 'trainer') return 'trainer';
-  return 'assessment';
-}
-
 /**
  * Resolves the EIOS workspace for a signed-in user.
- * EIOS uses the engineering workspace for admins. The legacy platform_admin
- * fallback is retained for non-admins so the product boundary can hand them
- * safely into the LLND RTO Administration workspace.
+ * EIOS remains isolated to its Engineering workspace. LLND workspace
+ * permissions never confer EIOS access.
  */
 function resolveEiosWorkspace(
   stored: AnyWorkspace,
   profile: { role?: string } | null,
-  hasWorkspace: (ws: CustomerWorkspace) => boolean,
+  _hasWorkspace: (ws: CustomerWorkspace) => boolean,
 ): AnyWorkspace {
   // Admin: engineering is the EIOS admin workspace
   if (profile?.role === 'admin') {
@@ -506,8 +503,7 @@ function resolveEiosWorkspace(
   }
   // Preserve the historical non-admin fallback. Because #/platform is an LLND
   // route, boundary enforcement moves this navigation from /eios to the root.
-  if (hasWorkspace('platform_admin')) return 'platform_admin';
-  return 'platform_admin';
+  return 'engineering';
 }
 
 function FullScreenLoader() {

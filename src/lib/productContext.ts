@@ -123,20 +123,22 @@ export function isEiosRoute(hash: string): boolean {
   const h = hash.replace(/^#\/?/, '').split('?')[0];
   if (!h || h === '') return true;
   const first = h.split('/')[0];
-  return ['engineering', 'administration', 'login', 'oauth'].includes(first);
+  return ['engineering', 'login', 'oauth'].includes(first);
 }
 
 /**
  * Returns true if a hash route belongs to LLND Automate product.
- * LLND routes: public website, authentication, assessment, trainer, and RTO
- * administration workspaces.
+ * LLND routes include the three permission-based RTO staff workspaces and
+ * separate public candidate token flows. Legacy staff routes remain recognised
+ * only so App can migrate them safely.
  */
 export function isLlndRoute(hash: string): boolean {
   const h = hash.replace(/^#\/?/, '').split('?')[0];
   if (!h || h === '') return false;
   const first = h.split('/')[0];
   return ['home', 'about', 'features', 'how-it-works', 'resources', 'contact',
-    'pricing', 'signup', 'forgot-password', 'assessment', 'trainer', 'platform',
+    'pricing', 'signup', 'forgot-password', 'rto-admin', 'candidate-support', 'technical',
+    'assessment', 'trainer', 'platform',
     'candidates', 'results', 'settings', 'llnd-automate', 'lln', 'digital',
     'quiz', 'student'].includes(first);
 }

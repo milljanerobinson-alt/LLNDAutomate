@@ -119,7 +119,7 @@ export function AdminLayout({ currentPage, onPageChange, children }: AdminLayout
 
         {/* Workspace switcher in sidebar footer */}
         <div className="px-4 py-4 border-t border-slate-200 space-y-2">
-          <WorkspaceSwitcher currentWorkspace="assessment" />
+          <WorkspaceSwitcher currentWorkspace="administration" />
         </div>
       </aside>
 
@@ -147,7 +147,7 @@ export function AdminLayout({ currentPage, onPageChange, children }: AdminLayout
             </button>
             {/* Workspace switcher in header (desktop) */}
             <div className="hidden lg:block">
-              <WorkspaceSwitcher currentWorkspace="assessment" />
+              <WorkspaceSwitcher currentWorkspace="administration" />
             </div>
           </div>
         </header>
@@ -158,7 +158,7 @@ export function AdminLayout({ currentPage, onPageChange, children }: AdminLayout
       <CommandPalette
         isOpen={cmdOpen}
         onClose={() => setCmdOpen(false)}
-        currentWorkspace="assessment"
+        currentWorkspace="administration"
       />
     </div>
   );

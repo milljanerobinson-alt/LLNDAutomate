@@ -68,10 +68,11 @@ describe('EIOS /eios entry never exposes LLND routes', () => {
     expect(fnBody).toContain("return 'engineering'");
   });
 
-  it('resolveEiosWorkspace returns platform_admin for non-admin', () => {
+  it('resolveEiosWorkspace does not hand non-admins into an LLND workspace', () => {
     const fnMatch = app.match(/function resolveEiosWorkspace[\s\S]*?^}/m);
     const fnBody = fnMatch![0];
-    expect(fnBody).toContain("return 'platform_admin'");
+    expect(fnBody).toContain("return 'engineering'");
+    expect(fnBody).not.toContain("return 'platform_admin'");
   });
 });
 
@@ -126,8 +127,8 @@ describe('Cross-product contamination rejection', () => {
     expect(app).toMatch(/route\.kind\s*===\s*['"]engineering['"]/);
   });
 
-  it('platform routes under /eios return to LLND', () => {
-    expect(app).toMatch(/route\.kind\s*===\s*['"]platform['"]/);
+  it('technical routes under /eios return to LLND', () => {
+    expect(app).toMatch(/route\.kind\s*===\s*['"]technical['"]/);
   });
 });
 
@@ -269,11 +270,11 @@ describe('Deep link preservation', () => {
 describe('Product-aware workspace resolution', () => {
   const app = readFile(APP_PATH);
 
-  it('primaryWorkspaceFor is still defined for LLND context', () => {
-    expect(app).toContain('function primaryWorkspaceFor');
+  it('uses permission-derived primaryWorkspace for LLND context', () => {
+    expect(app).toContain('primaryWorkspace');
   });
 
-  it('LLND root uses primaryWorkspaceFor', () => {
+  it('LLND root remains the public product boundary', () => {
     expect(app).toMatch(/route\.kind\s*===\s*['"]root['"]\s*&&\s*product\s*===\s*['"]llnd['"]/);
   });
 });

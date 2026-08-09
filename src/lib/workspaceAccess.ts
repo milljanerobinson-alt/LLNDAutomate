@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { useAuth } from './auth';
 
-export type CustomerWorkspace = 'assessment' | 'trainer' | 'platform_admin';
+export type CustomerWorkspace = 'administration' | 'candidate_support' | 'technical';
 export type AnyWorkspace = CustomerWorkspace | 'engineering';
 
 export interface WorkspaceAccess {
@@ -36,7 +36,13 @@ export function useWorkspaceAccess(): UseWorkspaceAccessResult {
       .order('is_primary', { ascending: false });
 
     if (data && data.length > 0) {
-      setWorkspaces(data as WorkspaceAccess[]);
+      const legacyMap: Record<string, CustomerWorkspace> = {
+        assessment: 'administration', trainer: 'candidate_support', platform_admin: 'technical',
+      };
+      setWorkspaces(data.map(row => ({
+        workspace: legacyMap[row.workspace] ?? row.workspace as CustomerWorkspace,
+        is_primary: row.is_primary,
+      })));
     } else {
       // Fallback: derive from role if no DB rows exist yet
       const fallback = deriveFromRole(profile?.role ?? 'admin');
@@ -48,7 +54,7 @@ export function useWorkspaceAccess(): UseWorkspaceAccessResult {
   const primaryWorkspace: CustomerWorkspace =
     workspaces.find(w => w.is_primary)?.workspace ??
     workspaces[0]?.workspace ??
-    'assessment';
+    'administration';
 
   function hasWorkspace(ws: CustomerWorkspace) {
     return workspaces.some(w => w.workspace === ws);
@@ -60,23 +66,29 @@ export function useWorkspaceAccess(): UseWorkspaceAccessResult {
 function deriveFromRole(role: string): WorkspaceAccess[] {
   if (role === 'admin') {
     return [
-      { workspace: 'assessment', is_primary: true },
-      { workspace: 'trainer', is_primary: false },
-      { workspace: 'platform_admin', is_primary: false },
+      { workspace: 'administration', is_primary: true },
+      { workspace: 'candidate_support', is_primary: false },
+      { workspace: 'technical', is_primary: false },
     ];
   }
   if (role === 'trainer') {
     return [
-      { workspace: 'assessment', is_primary: false },
-      { workspace: 'trainer', is_primary: true },
+      { workspace: 'candidate_support', is_primary: true },
     ];
   }
-  return [{ workspace: 'assessment', is_primary: true }];
+  return [{ workspace: 'administration', is_primary: true }];
 }
 
 // Storage helpers
 export function getLastWorkspace(): AnyWorkspace {
-  return (localStorage.getItem('ecc_workspace') as AnyWorkspace) || 'engineering';
+  const stored = localStorage.getItem('ecc_workspace');
+  const legacy: Record<string, CustomerWorkspace> = {
+    assessment: 'administration',
+    trainer: 'candidate_support',
+    platform_admin: 'technical',
+  };
+  const resolved = (stored && legacy[stored]) || stored;
+  return (resolved as AnyWorkspace) || 'engineering';
 }
 
 export function setLastWorkspace(ws: AnyWorkspace) {
@@ -93,9 +105,9 @@ export function setLastPage(ws: AnyWorkspace, page: string) {
 
 function defaultPage(ws: AnyWorkspace): string {
   switch (ws) {
-    case 'assessment':    return 'dashboard';
-    case 'trainer':       return 'dashboard';
-    case 'platform_admin':return 'dashboard';
+    case 'administration':   return 'dashboard';
+    case 'candidate_support':return 'dashboard';
+    case 'technical':        return 'dashboard';
     case 'engineering':   return 'mission-control';
   }
 }
@@ -103,8 +115,8 @@ function defaultPage(ws: AnyWorkspace): string {
 export function workspaceHash(ws: AnyWorkspace, page: string): string {
   switch (ws) {
     case 'engineering':    return `#/engineering/${page}`;
-    case 'assessment':     return `#/assessment/${page}`;
-    case 'trainer':        return `#/trainer/${page}`;
-    case 'platform_admin': return `#/platform/${page}`;
+    case 'administration':    return `#/rto-admin/${page}`;
+    case 'candidate_support': return `#/candidate-support/${page}`;
+    case 'technical':         return `#/technical/${page}`;
   }
 }

@@ -1,273 +1,83 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, Search, X } from 'lucide-react';
 import {
-  Search, X, ArrowRight, LayoutDashboard, FileText, Award, Users, BarChart3,
-  ClipboardList, AlertTriangle, ShieldCheck, ScrollText, Mail, Plug,
-  ArrowDownToLine, CheckCircle2, CreditCard, Settings, Brain,
-  Layers, Map, Package, Wrench, GitBranch, Shield,
-  ShieldCheck as ShieldCheckEng, History, Sparkles, Cpu, Activity,
-  DollarSign, ToggleLeft, Lock, Server, ClipboardCheck,
-  Terminal, GraduationCap, UserCheck, BookOpen, Globe, Zap, Flag, Database,
-  GitMerge,
-} from 'lucide-react';
-import { type AnyWorkspace, workspaceHash, setLastWorkspace, setLastPage } from '../lib/workspaceAccess';
+  type AnyWorkspace, type CustomerWorkspace, setLastPage, setLastWorkspace,
+  useWorkspaceAccess, workspaceHash,
+} from '../lib/workspaceAccess';
 import { navigateInProduct, resolveProduct } from '../lib/productContext';
 
-interface CommandEntry {
-  workspace: AnyWorkspace;
-  page: string;
-  label: string;
-  group: string;
-  icon: typeof Brain;
-  keywords?: string;
-}
+type Command = { workspace: AnyWorkspace; page: string; label: string; group: string };
 
-const COMMANDS: CommandEntry[] = [
-  // Candidate Assessment
-  { workspace: 'assessment', page: 'dashboard',          label: 'Dashboard',          group: 'Candidate Assessment', icon: LayoutDashboard },
-  { workspace: 'assessment', page: 'assessments',        label: 'Assessments',        group: 'Candidate Assessment', icon: FileText },
-  { workspace: 'assessment', page: 'qualifications',     label: 'Qualifications',     group: 'Candidate Assessment', icon: Award },
-  { workspace: 'assessment', page: 'candidates',         label: 'Candidates',         group: 'Candidate Assessment', icon: Users },
-  { workspace: 'assessment', page: 'results',            label: 'Results',            group: 'Candidate Assessment', icon: BarChart3 },
-  { workspace: 'assessment', page: 'support-plans',      label: 'Support Plans',      group: 'Candidate Assessment', icon: ClipboardList },
-  { workspace: 'assessment', page: 'interventions',      label: 'Interventions',      group: 'Candidate Assessment', icon: AlertTriangle },
-  { workspace: 'assessment', page: 'compliance',         label: 'Compliance',         group: 'Candidate Assessment', icon: ShieldCheck },
-  { workspace: 'assessment', page: 'acsf-evidence',      label: 'ACSF Evidence',      group: 'Candidate Assessment', icon: Brain },
-  { workspace: 'assessment', page: 'audit-log',          label: 'Audit Log',          group: 'Candidate Assessment', icon: ScrollText },
-
-  // Trainer Workspace
-  { workspace: 'trainer', page: 'dashboard',             label: 'My Dashboard',       group: 'Trainer Workspace', icon: LayoutDashboard },
-  { workspace: 'trainer', page: 'students',              label: 'My Students',        group: 'Trainer Workspace', icon: Users },
-  { workspace: 'trainer', page: 'awaiting-review',       label: 'Awaiting Review',    group: 'Trainer Workspace', icon: UserCheck },
-  { workspace: 'trainer', page: 'support-plans',         label: 'Support Plans',      group: 'Trainer Workspace', icon: ClipboardList },
-  { workspace: 'trainer', page: 'interventions',         label: 'Interventions',      group: 'Trainer Workspace', icon: AlertTriangle },
-  { workspace: 'trainer', page: 'results',               label: 'Results',            group: 'Trainer Workspace', icon: BarChart3 },
-  { workspace: 'trainer', page: 'evidence',              label: 'Evidence',           group: 'Trainer Workspace', icon: BookOpen },
-
-  // RTO Administration
-  { workspace: 'platform_admin', page: 'dashboard',        label: 'Platform Overview',  group: 'RTO Administration', icon: LayoutDashboard },
-  { workspace: 'platform_admin', page: 'settings',         label: 'Organisation',       group: 'RTO Administration', icon: Globe },
-  { workspace: 'platform_admin', page: 'users',            label: 'Users & Access',     group: 'RTO Administration', icon: Users },
-  { workspace: 'platform_admin', page: 'billing',          label: 'Billing & Usage',    group: 'RTO Administration', icon: CreditCard },
-  { workspace: 'platform_admin', page: 'axcelerate-inbound', label: 'aXcelerate Sync', group: 'RTO Administration', icon: ArrowDownToLine },
-  { workspace: 'platform_admin', page: 'axcelerate-log',   label: 'aXcelerate Log',     group: 'RTO Administration', icon: Plug },
-  { workspace: 'platform_admin', page: 'email-activity',   label: 'Email Activity',     group: 'RTO Administration', icon: Mail },
-  { workspace: 'platform_admin', page: 'validation',       label: 'Validation',         group: 'RTO Administration', icon: CheckCircle2 },
-  { workspace: 'platform_admin', page: 'ai-providers',     label: 'AI Providers',       group: 'RTO Administration', icon: Zap },
-  { workspace: 'platform_admin', page: 'feature-flags',    label: 'Feature Flags',      group: 'RTO Administration', icon: Flag },
-  { workspace: 'platform_admin', page: 'system-health',    label: 'System Health',      group: 'RTO Administration', icon: Activity },
-
-  // Engineering — AI Technical Director
-  { workspace: 'engineering', page: 'mission-control', label: 'AI Technical Director', group: 'Engineering: Director', icon: Brain, keywords: 'ai director executive dashboard briefing' },
-
-  // Engineering — Product Management
-  { workspace: 'engineering', page: 'ideas',          label: 'Goals & Epics',       group: 'Engineering: Product', icon: Layers },
-  { workspace: 'engineering', page: 'roadmap',        label: 'Roadmap',             group: 'Engineering: Product', icon: Map },
-  { workspace: 'engineering', page: 'backlog',        label: 'Ideas & Backlog',     group: 'Engineering: Product', icon: Brain },
-  { workspace: 'engineering', page: 'product-audit',  label: 'Feature Health',      group: 'Engineering: Product', icon: ClipboardCheck },
-
-  // Engineering — Engineering
-  { workspace: 'engineering', page: 'dev-programme',  label: 'Dev Programme',       group: 'Engineering: Build', icon: Cpu },
-  { workspace: 'engineering', page: 'features',       label: 'Features',            group: 'Engineering: Build', icon: Wrench },
-  { workspace: 'engineering', page: 'architecture',   label: 'Architecture',        group: 'Engineering: Build', icon: GitBranch },
-  { workspace: 'engineering', page: 'documentation',  label: 'Documentation',       group: 'Engineering: Build', icon: FileText },
-  { workspace: 'engineering', page: 'qa-testing',     label: 'Testing Framework',   group: 'Engineering: Build', icon: CheckCircle2 },
-  { workspace: 'engineering', page: 'release-centre', label: 'Releases',            group: 'Engineering: Build', icon: Package },
-  { workspace: 'engineering', page: 'audits',         label: 'Engineering Audits',  group: 'Engineering: Build', icon: Shield },
-  { workspace: 'engineering', page: 'arch-guardian',  label: 'Engineering Guardian',group: 'Engineering: Build', icon: ShieldCheckEng },
-  { workspace: 'engineering', page: 'change-log',     label: 'Change Log',          group: 'Engineering: Build', icon: History },
-  { workspace: 'engineering', page: 'workflow-engine', label: 'Workflow Engine',    group: 'Engineering: Build', icon: GitMerge, keywords: 'lifecycle stages governance gates approvals audit trail artefacts ewle' },
-  { workspace: 'engineering', page: 'ai-platform',    label: 'AI Platform',         group: 'Engineering: Build', icon: Sparkles },
-
-  // Engineering — Platform Ops
-  { workspace: 'engineering', page: 'pa-general',            label: 'Platform — General',          group: 'Engineering: Platform', icon: Settings },
-  { workspace: 'engineering', page: 'pa-integrations',       label: 'Platform — Integrations',     group: 'Engineering: Platform', icon: Plug },
-  { workspace: 'engineering', page: 'pa-security',           label: 'Platform — Security',         group: 'Engineering: Platform', icon: Lock },
-  { workspace: 'engineering', page: 'pa-environments',       label: 'Platform — Environments',     group: 'Engineering: Platform', icon: Server },
-  { workspace: 'engineering', page: 'pa-feature-flags',      label: 'Platform — Feature Flags',    group: 'Engineering: Platform', icon: ToggleLeft },
-  { workspace: 'engineering', page: 'pa-monitoring',         label: 'Platform — Monitoring',       group: 'Engineering: Platform', icon: Activity },
-  { workspace: 'engineering', page: 'pa-cost-monitoring',    label: 'Platform — Cost Monitoring',  group: 'Engineering: Platform', icon: DollarSign },
-  { workspace: 'engineering', page: 'pa-platform-analytics', label: 'Platform — Analytics',        group: 'Engineering: Platform', icon: BarChart3 },
-  { workspace: 'engineering', page: 'pa-system-logs',        label: 'Platform — System Logs',      group: 'Engineering: Platform', icon: ScrollText },
+const LLND_COMMANDS: Command[] = [
+  ...['Dashboard', 'Organisation', 'Users', 'Qualifications', 'Candidates', 'Support Routing', 'Assessments', 'Results', 'Completion Reports', 'Compliance', 'ACSF Evidence', 'Audit Log', 'Billing & Usage', 'Settings'].map((label, index) => ({
+    workspace: 'administration' as const,
+    page: ['dashboard', 'organisation', 'users', 'qualifications', 'candidates', 'support-routing', 'assessments', 'results', 'completion-reports', 'compliance', 'acsf-evidence', 'audit-log', 'billing', 'settings'][index],
+    label,
+    group: 'Administration Workspace',
+  })),
+  ...['Support Queue', 'Candidates Requiring Support', 'Unassigned Support', 'Awaiting Review', 'Results', 'Support Plans', 'Interventions'].map((label, index) => ({
+    workspace: 'candidate_support' as const,
+    page: ['dashboard', 'candidates', 'unassigned-support', 'awaiting-review', 'results', 'support-plans', 'interventions'][index],
+    label,
+    group: 'Candidate Support Workspace',
+  })),
+  ...['System Health', 'aXcelerate Integration', 'aXcelerate Sync', 'aXcelerate Log', 'Email Activity', 'Validation & Diagnostics', 'Mapping', 'Technical Settings'].map((label, index) => ({
+    workspace: 'technical' as const,
+    page: ['dashboard', 'axcelerate-integration', 'axcelerate-inbound', 'axcelerate-log', 'email-activity', 'validation', 'mapping', 'settings'][index],
+    label,
+    group: 'Technical Workspace',
+  })),
 ];
 
-const WORKSPACE_ICONS: Record<string, typeof Brain> = {
-  'Candidate Assessment': GraduationCap,
-  'Trainer Workspace': UserCheck,
-  'RTO Administration': Wrench,
-  'Engineering: Director': Brain,
-  'Engineering: Product': Map,
-  'Engineering: Build': Terminal,
-  'Engineering: Platform': Settings,
-};
+const EIOS_COMMANDS: Command[] = [
+  ['mission-control', 'AI Technical Director'], ['ideas', 'Goals & Epics'], ['roadmap', 'Roadmap'],
+  ['backlog', 'Ideas & Backlog'], ['dev-programme', 'Dev Programme'], ['architecture', 'Architecture'],
+  ['documentation', 'Documentation'], ['qa-testing', 'Testing Framework'], ['release-centre', 'Releases'],
+  ['pa-integrations', 'Platform Integrations'], ['pa-security', 'Platform Security'],
+  ['pa-feature-flags', 'Platform Feature Flags'], ['pa-monitoring', 'Platform Monitoring'],
+].map(([page, label]) => ({ workspace: 'engineering', page, label, group: 'Engineering Command Centre' }));
 
-const WORKSPACE_BADGE: Partial<Record<AnyWorkspace, { label: string; cls: string }>> = {
-  assessment:     { label: 'Assessment', cls: 'bg-primary-50 text-primary-600' },
-  trainer:        { label: 'Trainer', cls: 'bg-emerald-50 text-emerald-600' },
-  platform_admin: { label: 'Platform', cls: 'bg-slate-100 text-slate-600' },
-  engineering:    { label: 'Engineering', cls: 'bg-blue-100 text-blue-600' },
-};
+interface Props { isOpen: boolean; onClose: () => void; currentWorkspace: AnyWorkspace }
 
-interface CommandPaletteProps {
-  isOpen: boolean;
-  onClose: () => void;
-  currentWorkspace: AnyWorkspace;
-}
-
-export function CommandPalette({ isOpen, onClose, currentWorkspace }: CommandPaletteProps) {
+export function CommandPalette({ isOpen, onClose, currentWorkspace }: Props) {
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-
+  const { workspaces } = useWorkspaceAccess();
   const product = resolveProduct();
-  const productCommands = COMMANDS.filter(c => product === 'eios'
-    ? c.workspace === 'engineering'
-    : c.workspace !== 'engineering');
-  const filtered = query.trim()
-    ? productCommands.filter(c => {
-        const q = query.toLowerCase();
-        return (
-          c.label.toLowerCase().includes(q) ||
-          c.group.toLowerCase().includes(q) ||
-          (c.keywords ?? '').toLowerCase().includes(q) ||
-          c.workspace.includes(q)
-        );
-      })
-    : productCommands.filter(c => c.workspace === currentWorkspace);
-
-  const navigate = useCallback((cmd: CommandEntry) => {
-    setLastWorkspace(cmd.workspace);
-    setLastPage(cmd.workspace, cmd.page);
-    navigateInProduct(cmd.workspace === 'engineering' ? 'eios' : 'llnd', workspaceHash(cmd.workspace, cmd.page));
-    onClose();
-  }, [onClose]);
-
-  useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setSelected(0);
-      setTimeout(() => inputRef.current?.focus(), 30);
-    }
-  }, [isOpen]);
-
-  useEffect(() => { setSelected(0); }, [query]);
+  const allowed = new Set(workspaces.map(item => item.workspace));
+  const commands = product === 'eios' ? EIOS_COMMANDS : LLND_COMMANDS.filter(command => allowed.has(command.workspace as CustomerWorkspace));
+  const filtered = useMemo(() => commands.filter(command => {
+    if (!query.trim()) return command.workspace === currentWorkspace;
+    const haystack = `${command.label} ${command.group}`.toLowerCase();
+    return haystack.includes(query.toLowerCase());
+  }), [commands, currentWorkspace, query]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const handle = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(s + 1, filtered.length - 1)); }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)); }
-      if (e.key === 'Enter' && filtered[selected]) navigate(filtered[selected]);
-    };
-    window.addEventListener('keydown', handle);
-    return () => window.removeEventListener('keydown', handle);
-  }, [isOpen, filtered, selected, navigate, onClose]);
-
-  useEffect(() => {
-    const el = listRef.current?.querySelector(`[data-idx="${selected}"]`);
-    el?.scrollIntoView({ block: 'nearest' });
-  }, [selected]);
+    setQuery('');
+    setTimeout(() => inputRef.current?.focus(), 30);
+    const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const grouped: Record<string, CommandEntry[]> = {};
-  filtered.forEach(c => {
-    if (!grouped[c.group]) grouped[c.group] = [];
-    grouped[c.group].push(c);
-  });
+  function navigate(command: Command) {
+    setLastWorkspace(command.workspace);
+    setLastPage(command.workspace, command.page);
+    navigateInProduct(command.workspace === 'engineering' ? 'eios' : 'llnd', workspaceHash(command.workspace, command.page));
+    onClose();
+  }
 
-  let globalIdx = 0;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-200">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search pages, sections, or workspaces…"
-            className="flex-1 text-sm text-slate-900 placeholder-slate-400 bg-transparent outline-none"
-          />
-          {query && (
-            <button onClick={() => setQuery('')} className="p-0.5 text-slate-400 hover:text-slate-600">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <kbd className="hidden sm:inline-flex px-1.5 py-0.5 text-[10px] font-mono bg-slate-100 text-slate-500 rounded border border-slate-200">esc</kbd>
-        </div>
-
-        <div ref={listRef} className="overflow-y-auto max-h-96 py-1">
-          {filtered.length === 0 && (
-            <div className="py-10 text-center text-sm text-slate-400">No results for "{query}"</div>
-          )}
-
-          {Object.entries(grouped).map(([group, items]) => {
-            const GroupIcon = WORKSPACE_ICONS[group] ?? ArrowRight;
-            return (
-              <div key={group}>
-                <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                  <GroupIcon className="w-3 h-3 text-slate-400 shrink-0" />
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{group}</p>
-                </div>
-                {items.map(cmd => {
-                  const Icon = cmd.icon;
-                  const idx = globalIdx++;
-                  const isSel = idx === selected;
-                  const isCrossWorkspace = cmd.workspace !== currentWorkspace;
-                  const badge = isCrossWorkspace ? WORKSPACE_BADGE[cmd.workspace] : undefined;
-                  return (
-                    <button
-                      key={`${cmd.workspace}-${cmd.page}`}
-                      data-idx={idx}
-                      onClick={() => navigate(cmd)}
-                      onMouseEnter={() => setSelected(idx)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                        isSel ? 'bg-blue-50' : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        isSel ? 'bg-blue-100' : 'bg-slate-100'
-                      }`}>
-                        <Icon className={`w-3.5 h-3.5 ${isSel ? 'text-blue-600' : 'text-slate-500'}`} />
-                      </div>
-                      <span className={`flex-1 text-sm font-medium ${isSel ? 'text-blue-700' : 'text-slate-700'}`}>
-                        {cmd.label}
-                      </span>
-                      {badge && (
-                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${badge.cls}`}>
-                          {badge.label}
-                        </span>
-                      )}
-                      {isSel && <ArrowRight className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="px-4 py-2.5 border-t border-slate-100 flex items-center gap-4 bg-slate-50/60">
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            <kbd className="px-1 py-0.5 font-mono bg-white border border-slate-200 rounded text-[9px]">↑↓</kbd>
-            navigate
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            <kbd className="px-1 py-0.5 font-mono bg-white border border-slate-200 rounded text-[9px]">↵</kbd>
-            open
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            <kbd className="px-1.5 py-0.5 font-mono bg-white border border-slate-200 rounded text-[9px]">esc</kbd>
-            close
-          </div>
-          <div className="ml-auto text-[10px] text-slate-400">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</div>
-        </div>
+  return <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4">
+    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+    <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-200"><Search className="w-4 h-4 text-slate-400" /><input ref={inputRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search assigned workspaces…" className="flex-1 text-sm outline-none" /><button onClick={onClose}><X className="w-4 h-4 text-slate-400" /></button></div>
+      <div className="max-h-96 overflow-y-auto p-2">
+        {filtered.length === 0 && <p className="p-8 text-center text-sm text-slate-400">No available pages found.</p>}
+        {filtered.map(command => <button key={`${command.workspace}-${command.page}`} onClick={() => navigate(command)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-primary-50"><div className="flex-1"><p className="text-sm font-medium text-slate-800">{command.label}</p><p className="text-[10px] text-slate-400">{command.group}</p></div><ArrowRight className="w-4 h-4 text-slate-400" /></button>)}
       </div>
     </div>
-  );
+  </div>;
 }

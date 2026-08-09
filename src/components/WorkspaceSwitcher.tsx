@@ -29,9 +29,9 @@ interface WsDef {
 
 const ALL_WORKSPACES: WsDef[] = [
   {
-    key: 'assessment',
-    label: 'Candidate Assessment',
-    sub: 'Operate the organisation',
+    key: 'administration',
+    label: 'Administration Workspace',
+    sub: 'Organisation oversight',
     icon: GraduationCap,
     accent: 'text-primary-600',
     bg: 'bg-primary-50',
@@ -39,9 +39,9 @@ const ALL_WORKSPACES: WsDef[] = [
     dot: 'bg-primary-500',
   },
   {
-    key: 'trainer',
-    label: 'Trainer Workspace',
-    sub: 'Support learners',
+    key: 'candidate_support',
+    label: 'Candidate Support Workspace',
+    sub: 'Candidates requiring support',
     icon: GraduationCap,
     accent: 'text-emerald-600',
     bg: 'bg-emerald-50',
@@ -49,9 +49,9 @@ const ALL_WORKSPACES: WsDef[] = [
     dot: 'bg-emerald-500',
   },
   {
-    key: 'platform_admin',
-    label: 'RTO Administration',
-    sub: 'Configure your organisation',
+    key: 'technical',
+    label: 'Technical Workspace',
+    sub: 'Integration and diagnostics',
     icon: Wrench,
     accent: 'text-slate-700',
     bg: 'bg-slate-100',
@@ -100,7 +100,10 @@ export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) 
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || resolveProduct() !== 'eios') {
+      setInboxCount(0);
+      return;
+    }
     async function loadCount() {
       const { count } = await supabase
         .from('ecc_ai_inbox')
@@ -133,7 +136,7 @@ export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) 
       >
         <CurrentIcon className={`w-4 h-4 ${current.accent}`} />
         <span className="hidden sm:inline max-w-36 truncate">{current.label}</span>
-        {inboxCount > 0 && currentWorkspace !== 'engineering' && (
+        {inboxCount > 0 && currentWorkspace === 'engineering' && (
           <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
             {inboxCount > 9 ? '9+' : inboxCount}
           </span>

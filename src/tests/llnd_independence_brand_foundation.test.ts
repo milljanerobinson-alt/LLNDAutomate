@@ -42,9 +42,9 @@ describe('LLND Automate product boundary', () => {
     '#/pricing',
     '#/signup',
     '#/llnd-automate/login',
-    '#/assessment/dashboard',
-    '#/trainer/dashboard',
-    '#/platform/dashboard',
+    '#/rto-admin/dashboard',
+    '#/candidate-support/dashboard',
+    '#/technical/dashboard',
   ])('classifies %s as LLND', (route) => {
     expect(isLlndRoute(route)).toBe(true);
     expect(isEiosRoute(route)).toBe(false);
@@ -62,6 +62,6 @@ describe('LLND Automate product boundary', () => {
     const switcher = fs.readFileSync(path.resolve(__dirname, '../components/WorkspaceSwitcher.tsx'), 'utf-8');
     const palette = fs.readFileSync(path.resolve(__dirname, '../components/CommandPalette.tsx'), 'utf-8');
     expect(switcher).toContain("if (ws.key === 'engineering') return false");
-    expect(palette).toContain(": c.workspace !== 'engineering'");
+    expect(palette).toContain("product === 'eios' ? EIOS_COMMANDS : LLND_COMMANDS");
   });
 });
