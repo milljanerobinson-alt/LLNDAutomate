@@ -60,6 +60,30 @@ describe('Issue #40 Administration controls', () => {
     expect(invite).toContain('SUPABASE_SERVICE_ROLE_KEY');
     expect(read('pages/workspace/UsersPage.tsx')).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
+  it('keeps invited accounts inactive until confirmed auth state activates them', () => {
+    expect(migration).toContain("VALUES (grant_row.organisation_id,p_user_id,'invited'");
+    expect(migration).toContain('is_active=false');
+    expect(migration).toContain('AFTER UPDATE OF email_confirmed_at ON auth.users');
+    expect(migration).toContain("SET status='active',activated_at=now()");
+  });
+  it('uses server-controlled invitation grants instead of browser tenant metadata', () => {
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS staff_invitation_grants');
+    expect(migration).toContain('REVOKE ALL ON TABLE staff_invitation_grants FROM anon, authenticated');
+    expect(invite).toContain('prepare_staff_invitation');
+    expect(invite).toContain('link_staff_invitation');
+    expect(invite).toContain('reconciled: true');
+    expect(invite).not.toContain('organisation_id: access.organisation_id, workspaces: selected');
+    expect(migration).not.toContain("org_id := nullif(NEW.raw_user_meta_data->>'organisation_id'");
+  });
+  it('creates a new RTO for direct signup without accepting an existing organisation', () => {
+    expect(migration).toContain("IF NEW.invited_at IS NOT NULL THEN");
+    expect(migration).toContain('INSERT INTO public.organisations (name,created_by)');
+  });
+  it('fails invitation redirects closed to configured URLs', () => {
+    expect(invite).toContain('PUBLIC_SITE_URL is required');
+    expect(invite).toContain('Invitation origin is not approved');
+    expect(invite).not.toContain('req.headers.get("origin") ?? ""');
+  });
 });
 
 describe('Issue #40 support-case and tenancy enforcement', () => {
@@ -69,6 +93,9 @@ describe('Issue #40 support-case and tenancy enforcement', () => {
   });
   it('limits Candidate Support to assigned or unassigned cases', () => {
     expect(migration).toContain('(assignee = auth.uid() OR assignee IS NULL)');
+  });
+  it('requires an actual support case before Candidate Support can reach dependent records', () => {
+    expect(migration).toContain("public.has_workspace_access('candidate_support') AND sc.id IS NOT NULL");
   });
   it('limits candidate and invitation direct reads to accessible support cases', () => {
     expect(migration).toContain('students_workspace_select');
@@ -86,12 +113,49 @@ describe('Issue #40 support-case and tenancy enforcement', () => {
     expect(migration).not.toContain('support_case_candidate_support_update');
   });
   it('enforces organisation tenancy in helpers and member mutation', () => {
-    expect(migration).toContain('case_org = current_organisation_id()');
+    expect(migration).toContain('case_org = public.current_organisation_id()');
     expect(migration).toContain('cross-organisation member access denied');
   });
   it('denies inactive users through membership and profile checks', () => {
     expect(migration).toContain("m.status = 'active'");
-    expect(migration).toContain('JOIN profiles p ON p.id = m.user_id AND p.is_active');
+    expect(migration).toContain('JOIN public.profiles p ON p.id = m.user_id AND p.is_active');
+  });
+  it('prevents self-service mutation of tenant, role and activation state', () => {
+    expect(migration).toContain('REVOKE UPDATE ON TABLE profiles FROM authenticated');
+    expect(migration).toContain('GRANT UPDATE (full_name,avatar_url) ON profiles TO authenticated');
+  });
+  it('enforces one RTO membership per user without unordered tenant selection', () => {
+    expect(migration).toContain('organisation_memberships_one_rto_per_user');
+    expect(migration).toContain('ON organisation_memberships(user_id)');
+    expect(migration).not.toMatch(/current_organisation_id\(\)[\s\S]{0,300}LIMIT 1/);
+  });
+  it('aborts ambiguous tenant backfills and preserves an active administrator', () => {
+    expect(migration).toContain('multiple organisations exist; legacy ownership is ambiguous');
+    expect(migration).toContain('Legacy invitations may pre-date student linking');
+    expect(migration).toContain('migration would leave the RTO without an active Administration user');
+  });
+  it('blocks public tokens from updating tenant and ownership columns', () => {
+    expect(migration).toContain('REVOKE UPDATE ON TABLE assessment_invitations FROM anon');
+    const anonInvitationGrant = migration.match(/REVOKE UPDATE ON TABLE assessment_invitations FROM anon;\s*(GRANT UPDATE \([\s\S]*?\) ON assessment_invitations TO anon;)/)?.[1] ?? '';
+    for (const protectedColumn of ['organisation_id', 'student_id', 'enrolment_id', 'created_by', 'trainer_override_by']) {
+      expect(anonInvitationGrant).not.toContain(protectedColumn);
+    }
+    expect(migration).toContain('GRANT UPDATE (answer, submitted_at) ON assessment_responses TO anon');
+    expect(migration).toContain('enforce_candidate_token_update_boundary');
+    expect(migration).toContain('assessment token cannot modify tenant, ownership or structural fields');
+    expect(migration).toContain('REVOKE INSERT ON TABLE invitation_assessments FROM anon');
+    expect(migration).toContain('validate_candidate_token_response_insert');
+  });
+  it('hardens privileged helpers and keeps trigger functions private', () => {
+    expect(migration).toContain('SET search_path = pg_catalog, public');
+    expect(migration).toContain('REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC');
+    expect(migration).toContain('REVOKE ALL ON FUNCTION public.activate_confirmed_staff_invitation() FROM PUBLIC');
+  });
+  it('wraps the migration atomically and documents rollback preflight', () => {
+    expect(migration.trimStart().startsWith('/*')).toBe(true);
+    expect(migration).toContain('\nBEGIN;');
+    expect(migration.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(migration).toContain('take a Supabase backup/PITR recovery point');
   });
 });
 
