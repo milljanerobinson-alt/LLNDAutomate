@@ -25,3 +25,6 @@ dist-ssr
 .bolt/
 vite.config.ts.timestamp-*
 investigation-*.pdf
+test-results/
+playwright-report/
+blob-report/
