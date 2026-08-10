@@ -14,8 +14,10 @@ export const authenticatedEnvironment = {
   serviceRoleKey: requiredEnvironment('E2E_SUPABASE_SERVICE_ROLE_KEY'),
   adminEmail: requiredEnvironment('E2E_ADMIN_EMAIL').toLowerCase(),
   adminPassword: requiredEnvironment('E2E_ADMIN_PASSWORD'),
-  limitedEmail: requiredEnvironment('E2E_LIMITED_EMAIL').toLowerCase(),
-  limitedPassword: requiredEnvironment('E2E_LIMITED_PASSWORD'),
+  candidateSupportEmail: requiredEnvironment('E2E_CANDIDATE_SUPPORT_EMAIL').toLowerCase(),
+  candidateSupportPassword: requiredEnvironment('E2E_CANDIDATE_SUPPORT_PASSWORD'),
+  technicalEmail: requiredEnvironment('E2E_TECHNICAL_EMAIL').toLowerCase(),
+  technicalPassword: requiredEnvironment('E2E_TECHNICAL_PASSWORD'),
   inviteEmail: requiredEnvironment('E2E_INVITE_EMAIL').toLowerCase(),
   invitePassword: requiredEnvironment('E2E_INVITE_PASSWORD'),
 };
@@ -27,7 +29,7 @@ if (previewUrl.protocol !== 'https:' || !previewUrl.hostname.endsWith('.llndauto
 if (!authenticatedEnvironment.inviteEmail.includes('+e2e')) {
   throw new Error('E2E_INVITE_EMAIL must be a dedicated disposable +e2e address');
 }
-if ([authenticatedEnvironment.adminEmail, authenticatedEnvironment.limitedEmail].includes(authenticatedEnvironment.inviteEmail)) {
+if ([authenticatedEnvironment.adminEmail, authenticatedEnvironment.candidateSupportEmail, authenticatedEnvironment.technicalEmail].includes(authenticatedEnvironment.inviteEmail)) {
   throw new Error('The disposable invitation identity must differ from the authenticated test identities');
 }
 

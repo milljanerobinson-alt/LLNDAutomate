@@ -44,16 +44,20 @@ E2E_SUPABASE_ANON_KEY
 E2E_SUPABASE_SERVICE_ROLE_KEY
 E2E_ADMIN_EMAIL
 E2E_ADMIN_PASSWORD
-E2E_LIMITED_EMAIL
-E2E_LIMITED_PASSWORD
+E2E_CANDIDATE_SUPPORT_EMAIL
+E2E_CANDIDATE_SUPPORT_PASSWORD
+E2E_TECHNICAL_EMAIL
+E2E_TECHNICAL_PASSWORD
 E2E_INVITE_EMAIL
 E2E_INVITE_PASSWORD
 ```
 
-`E2E_ADMIN_EMAIL` must be a staging-only Administration user assigned all three staff
-workspaces. `E2E_LIMITED_EMAIL` must be a staging-only user assigned only Candidate
-Support. `E2E_INVITE_EMAIL` must be a disposable `+e2e` address distinct from both test
-identities. The service-role key remains in the Playwright Node process and is used only
+The permanent staging convention is Admin Test (`milljanerobinson+admin@gmail.com`),
+Candidate Support Test (`milljanerobinson+cs@gmail.com`) and Technical Test
+(`milljanerobinson+tech@gmail.com`). The Administration identity has all three staff
+workspaces; the limited identity has Candidate Support only; the Technical identity has
+Technical only. `E2E_INVITE_EMAIL` must be a separate disposable `+e2e` address.
+The service-role key remains in the Playwright Node process and is used only
 to assert and remove that disposable fixture; it is never injected into the browser.
 
 Run the authenticated gate:
@@ -64,7 +68,8 @@ E2E_SUPABASE_URL=... \
 E2E_SUPABASE_ANON_KEY=... \
 E2E_SUPABASE_SERVICE_ROLE_KEY=... \
 E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... \
-E2E_LIMITED_EMAIL=... E2E_LIMITED_PASSWORD=... \
+E2E_CANDIDATE_SUPPORT_EMAIL=... E2E_CANDIDATE_SUPPORT_PASSWORD=... \
+E2E_TECHNICAL_EMAIL=... E2E_TECHNICAL_PASSWORD=... \
 E2E_INVITE_EMAIL=... E2E_INVITE_PASSWORD=... \
 npm run test:e2e:authenticated
 ```

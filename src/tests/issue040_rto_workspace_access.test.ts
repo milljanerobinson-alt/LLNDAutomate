@@ -11,6 +11,7 @@ const palette = read('components/CommandPalette.tsx');
 const app = read('App.tsx');
 const migration = read('../supabase/migrations/20260809092000_issue040_rto_workspace_access.sql');
 const invitationFix = read('../supabase/migrations/20260810170000_issue040_invitation_role_reconciliation.sql');
+const membershipFix = read('../supabase/migrations/20260810223000_issue040_canonical_invitation_membership.sql');
 const invite = read('../supabase/functions/invite-rto-staff/index.ts');
 const originPolicy = read('../supabase/functions/invite-rto-staff/origin-policy.ts');
 
@@ -103,6 +104,31 @@ describe('Issue #40 Administration controls', () => {
     expect(invitationFix).toContain('GRANT EXECUTE ON FUNCTION public.reconcile_staff_invitation(uuid) TO service_role');
     expect(invite).toContain('service.rpc("reconcile_staff_invitation"');
     expect(invite).not.toContain('.from("staff_invitation_grants").select("user_id,status")');
+  });
+  it('selects a trusted pending invitation grant before inspecting invited_at', () => {
+    const grantLookup = membershipFix.indexOf('SELECT g.id INTO grant_id');
+    const invitedFallback = membershipFix.indexOf('IF NEW.invited_at IS NOT NULL THEN');
+    const directSignup = membershipFix.indexOf('Legitimate self-signup remains separate');
+    expect(grantLookup).toBeGreaterThan(-1);
+    expect(grantLookup).toBeLessThan(invitedFallback);
+    expect(invitedFallback).toBeLessThan(directSignup);
+    expect(membershipFix).toContain("g.id=nullif(NEW.raw_user_meta_data->>'invitation_grant_id','')::uuid");
+    expect(membershipFix).toContain('g.invited_email=lower(NEW.email)');
+    expect(membershipFix).toContain("nullif(raw_user_meta_data->>'invitation_grant_id','')::uuid=p_grant_id");
+  });
+  it('retains one membership row and fails closed for unrelated cross-RTO membership', () => {
+    expect(membershipFix).toContain('WHERE user_id=p_user_id\n  FOR UPDATE');
+    expect(membershipFix).toContain('UPDATE public.organisation_memberships\n    SET organisation_id=grant_row.organisation_id');
+    expect(membershipFix).toContain("RAISE EXCEPTION 'invited account already belongs to another RTO'");
+    expect(membershipFix).not.toContain('DROP INDEX organisation_memberships_one_rto_per_user');
+    expect(membershipFix).not.toContain('ON CONFLICT DO NOTHING');
+  });
+  it('provides an Administration-only canonical pending staff register', () => {
+    expect(membershipFix).toContain('public.list_organisation_staff()');
+    expect(membershipFix).toContain("g.status='pending'");
+    expect(membershipFix).toContain("public.has_workspace_access('administration')");
+    expect(read('pages/workspace/UsersPage.tsx')).toContain("supabase.rpc('list_organisation_staff')");
+    expect(read('pages/workspace/UsersPage.tsx')).toContain("member.status === 'invited' ? member.pending_workspaces : member.workspaces");
   });
   it('creates a new RTO for direct signup without accepting an existing organisation', () => {
     expect(migration).toContain("IF NEW.invited_at IS NOT NULL THEN");

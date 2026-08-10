@@ -77,13 +77,31 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
   });
 
   test('permission-limited identity is redirected away from a direct unauthorized workspace URL', async ({ page, runtimeEvidence: _runtime }) => {
-    await authenticatePage(page, env.limitedEmail, env.limitedPassword);
+    await authenticatePage(page, env.candidateSupportEmail, env.candidateSupportPassword);
     await page.goto('/#/technical/dashboard');
     await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
     await expect(page.locator('header')).toContainText('Support Queue');
     await page.locator('header').getByTestId('workspace-switcher-trigger').click();
     await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace]')).toHaveCount(1);
     await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace="candidate_support"]')).toBeVisible();
+
+    await page.goto('/#/rto-admin/dashboard');
+    await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
+  });
+
+  test('Technical-only identity cannot enter Administration or Candidate Support', async ({ page, runtimeEvidence: _runtime }) => {
+    await authenticatePage(page, env.technicalEmail, env.technicalPassword);
+    await page.goto('/#/technical/dashboard');
+    await expect(page).toHaveURL(/#\/technical\/dashboard$/);
+    await page.locator('header').getByTestId('workspace-switcher-trigger').click();
+    const menu = page.getByTestId('workspace-switcher-menu');
+    await expect(menu.locator('[data-workspace]')).toHaveCount(1);
+    await expect(menu.locator('[data-workspace="technical"]')).toBeVisible();
+
+    await page.goto('/#/rto-admin/dashboard');
+    await expect(page).toHaveURL(/#\/technical\/dashboard$/);
+    await page.goto('/#/candidate-support/dashboard');
+    await expect(page).toHaveURL(/#\/technical\/dashboard$/);
   });
 
   test('Administration Users page loads', async ({ page, runtimeEvidence: _runtime }) => {
@@ -99,6 +117,9 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
     try {
       await authenticatePage(page, env.adminEmail, env.adminPassword);
       await page.goto('/#/rto-admin/users');
+      const { data: adminMembership, error: adminMembershipError } = await service
+        .from('organisation_memberships').select('organisation_id').eq('user_id', (await service.auth.admin.listUsers({ page: 1, perPage: 1000 })).data.users.find(user => user.email?.toLowerCase() === env.adminEmail)!.id).single();
+      expect(adminMembershipError).toBeNull();
       const methods: string[] = [];
       page.on('request', request => {
         if (request.url().includes('/invite-rto-staff')) methods.push(request.method());
@@ -116,6 +137,12 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
       expect(methods).toContain('POST');
       await expect(page.getByText('Invitation email sent.')).toBeVisible();
 
+      const invitedRow = page.locator('[data-testid="organisation-staff-row"]', { hasText: env.inviteEmail });
+      await expect(invitedRow).toBeVisible();
+      await expect(invitedRow.getByTestId('staff-status')).toHaveText('invited');
+      await expect(invitedRow).toContainText('inactive');
+      await expect(invitedRow.getByTestId('staff-workspace')).toHaveText('Candidate Support');
+
       const { data: grant, error: grantError } = await service.from('staff_invitation_grants')
         .select('id,user_id,status,approved_workspaces').eq('invited_email', env.inviteEmail).single();
       expect(grantError).toBeNull();
@@ -124,14 +151,22 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
       expect(grant?.approved_workspaces).toEqual(['candidate_support']);
 
       const userId = grant!.user_id as string;
-      const [{ data: membership }, { data: profile }, { count: accessBefore }] = await Promise.all([
-        service.from('organisation_memberships').select('status').eq('user_id', userId).single(),
+      const [{ data: memberships }, { data: profile }, { count: accessBefore }] = await Promise.all([
+        service.from('organisation_memberships').select('id,organisation_id,status').eq('user_id', userId),
         service.from('profiles').select('is_active').eq('id', userId).single(),
         service.from('user_workspace_access').select('*', { count: 'exact', head: true }).eq('user_id', userId),
       ]);
-      expect(membership?.status).toBe('invited');
+      expect(memberships).toHaveLength(1);
+      expect(memberships![0].status).toBe('invited');
+      expect(memberships![0].organisation_id).toBe(adminMembership!.organisation_id);
+      const membershipId = memberships![0].id;
       expect(profile?.is_active).toBe(false);
       expect(accessBefore).toBe(0);
+
+      const { error: retryError } = await service.rpc('reconcile_staff_invitation', { p_grant_id: grant!.id });
+      expect(retryError).toBeNull();
+      const { data: retryMemberships } = await service.from('organisation_memberships').select('id,status').eq('user_id', userId);
+      expect(retryMemberships).toEqual([{ id: membershipId, status: 'invited' }]);
 
       const { error: acceptanceError } = await service.auth.admin.updateUserById(userId, {
         email_confirm: true,
@@ -143,11 +178,13 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
         const { data } = await service.from('organisation_memberships').select('status').eq('user_id', userId).single();
         return data?.status;
       }).toBe('active');
-      const [{ data: activeProfile }, { data: workspaceRows }, { data: acceptedGrant }] = await Promise.all([
+      const [{ data: activeMemberships }, { data: activeProfile }, { data: workspaceRows }, { data: acceptedGrant }] = await Promise.all([
+        service.from('organisation_memberships').select('id,organisation_id,status').eq('user_id', userId),
         service.from('profiles').select('is_active').eq('id', userId).single(),
         service.from('user_workspace_access').select('workspace').eq('user_id', userId),
         service.from('staff_invitation_grants').select('status').eq('id', grant!.id).single(),
       ]);
+      expect(activeMemberships).toEqual([{ id: membershipId, organisation_id: adminMembership!.organisation_id, status: 'active' }]);
       expect(activeProfile?.is_active).toBe(true);
       expect(workspaceRows?.map(row => row.workspace)).toEqual(['candidate_support']);
       expect(acceptedGrant?.status).toBe('accepted');
@@ -159,6 +196,15 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
       });
       expect(invitedSignInError).toBeNull();
       expect(invitedSignIn.session).toBeTruthy();
+
+      await page.reload();
+      const activeRow = page.locator('[data-testid="organisation-staff-row"]', { hasText: env.inviteEmail });
+      await expect(activeRow.getByTestId('staff-status')).toHaveText('active');
+      await authenticatePage(page, env.inviteEmail, env.invitePassword);
+      await page.goto('/#/candidate-support/dashboard');
+      await page.locator('header').getByTestId('workspace-switcher-trigger').click();
+      await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace]')).toHaveCount(1);
+      await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace="candidate_support"]')).toBeVisible();
     } finally {
       await removeDisposableInvitationFixture();
     }
