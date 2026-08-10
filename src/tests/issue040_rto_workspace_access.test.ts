@@ -35,6 +35,13 @@ describe('Issue #40 workspace access model', () => {
     expect(switcher).not.toContain("label: 'Candidate Assessment'");
     expect(layout).not.toContain("label: 'Candidate Assessment'");
   });
+  it('renders authorised workspace switching in both the header and sidebar', () => {
+    expect(layout.match(/<WorkspaceSwitcher currentWorkspace=\{workspace\}/g)).toHaveLength(2);
+    expect(layout).toContain('menuPlacement="up"');
+    expect(switcher).toContain("menuPlacement?: 'up' | 'down'");
+    expect(switcher).toContain("menuPlacement === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'");
+    expect(switcher).toContain('customerAccess.some');
+  });
   it('filters command search by assigned workspace', () => {
     expect(palette).toContain('allowed.has(command.workspace');
   });
@@ -83,6 +90,12 @@ describe('Issue #40 Administration controls', () => {
     expect(invite).toContain('PUBLIC_SITE_URL is required');
     expect(invite).toContain('Invitation origin is not approved');
     expect(invite).not.toContain('req.headers.get("origin") ?? ""');
+  });
+  it('allows the standard Supabase browser headers without weakening CORS origins', () => {
+    expect(invite).toContain('"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"');
+    expect(invite).toContain('"Access-Control-Allow-Methods": "POST, OPTIONS"');
+    expect(invite).toContain('origin && [configured, ...local].includes(origin) ? origin');
+    expect(invite).not.toContain('"Access-Control-Allow-Origin": "*"');
   });
 });
 

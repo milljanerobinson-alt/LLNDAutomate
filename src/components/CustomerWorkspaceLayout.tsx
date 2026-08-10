@@ -106,12 +106,15 @@ export function CustomerWorkspaceLayout({ workspace, currentPage, onPageChange, 
             return <button key={item.key} onClick={() => navigate(item.key)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${active ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><Icon className={`w-4 h-4 ${active ? 'text-primary-600' : 'text-slate-400'}`} /><span>{item.label}</span></button>;
           })}
         </nav>
-        <div className="px-4 py-4 border-t border-slate-200"><WorkspaceSwitcher currentWorkspace={workspace} /></div>
+        <div className="px-4 py-4 border-t border-slate-200"><WorkspaceSwitcher currentWorkspace={workspace} menuPlacement="up" /></div>
       </aside>
       <div className="flex-1 min-w-0 flex flex-col h-screen">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 shrink-0">
           <div className="flex items-center gap-3"><button onClick={() => setSidebarOpen(true)} className="lg:hidden"><Menu className="w-5 h-5" /></button><h1 className="font-semibold text-slate-900">{currentNav?.label ?? cfg.label}</h1></div>
-          <button onClick={() => setCmdOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg"><Command className="w-3.5 h-3.5" /><span className="hidden sm:inline">Search</span></button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCmdOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg"><Command className="w-3.5 h-3.5" /><span className="hidden sm:inline">Search</span></button>
+            <WorkspaceSwitcher currentWorkspace={workspace} />
+          </div>
         </header>
         <main className="flex-1 overflow-auto p-4 lg:p-8">{children}</main>
       </div>

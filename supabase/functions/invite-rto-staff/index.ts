@@ -21,7 +21,8 @@ function corsHeaders(req: Request) {
   const local = (Deno.env.get("INVITATION_REDIRECT_ALLOWLIST") ?? "").split(",").map((v) => v.trim().replace(/\/$/, ""));
   return {
     "Access-Control-Allow-Origin": origin && [configured, ...local].includes(origin) ? origin : configured ?? "null",
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Vary": "Origin",
   };
 }
