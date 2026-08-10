@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isApprovedOrigin } from '../../supabase/functions/invite-rto-staff/origin-policy';
 
 const read = (relative: string) => fs.readFileSync(path.resolve(__dirname, '..', relative), 'utf8');
 const access = read('lib/workspaceAccess.ts');
@@ -10,6 +11,7 @@ const palette = read('components/CommandPalette.tsx');
 const app = read('App.tsx');
 const migration = read('../supabase/migrations/20260809092000_issue040_rto_workspace_access.sql');
 const invite = read('../supabase/functions/invite-rto-staff/index.ts');
+const originPolicy = read('../supabase/functions/invite-rto-staff/origin-policy.ts');
 
 describe('Issue #40 workspace access model', () => {
   it('defines exactly the three customer workspace identifiers', () => {
@@ -35,11 +37,12 @@ describe('Issue #40 workspace access model', () => {
     expect(switcher).not.toContain("label: 'Candidate Assessment'");
     expect(layout).not.toContain("label: 'Candidate Assessment'");
   });
-  it('renders authorised workspace switching in both the header and sidebar', () => {
-    expect(layout.match(/<WorkspaceSwitcher currentWorkspace=\{workspace\}/g)).toHaveLength(2);
-    expect(layout).toContain('menuPlacement="up"');
-    expect(switcher).toContain("menuPlacement?: 'up' | 'down'");
-    expect(switcher).toContain("menuPlacement === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'");
+  it('renders permission-filtered workspace switching only in the top-right header', () => {
+    expect(layout.match(/<WorkspaceSwitcher currentWorkspace=\{workspace\}/g)).toHaveLength(1);
+    expect(layout.indexOf('<WorkspaceSwitcher currentWorkspace={workspace} />')).toBeGreaterThan(layout.indexOf('<header'));
+    expect(layout.indexOf('<WorkspaceSwitcher currentWorkspace={workspace} />')).toBeLessThan(layout.indexOf('</header>'));
+    expect(layout).not.toContain('menuPlacement="up"');
+    expect(read('components/AdminLayout.tsx').match(/<WorkspaceSwitcher currentWorkspace="administration"/g)).toHaveLength(1);
     expect(switcher).toContain('customerAccess.some');
   });
   it('filters command search by assigned workspace', () => {
@@ -87,15 +90,34 @@ describe('Issue #40 Administration controls', () => {
     expect(migration).toContain('INSERT INTO public.organisations (name,created_by)');
   });
   it('fails invitation redirects closed to configured URLs', () => {
-    expect(invite).toContain('PUBLIC_SITE_URL is required');
+    expect(invite).toContain('PUBLIC_SITE_URL is required and must be a valid HTTP(S) origin');
     expect(invite).toContain('Invitation origin is not approved');
     expect(invite).not.toContain('req.headers.get("origin") ?? ""');
   });
   it('allows the standard Supabase browser headers without weakening CORS origins', () => {
     expect(invite).toContain('"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"');
     expect(invite).toContain('"Access-Control-Allow-Methods": "POST, OPTIONS"');
-    expect(invite).toContain('origin && [configured, ...local].includes(origin) ? origin');
+    expect(invite).toContain('headers["Access-Control-Allow-Origin"] = parseOrigin(origin)!');
     expect(invite).not.toContain('"Access-Control-Allow-Origin": "*"');
+  });
+  it('accepts only HTTPS LLND Automate Cloudflare preview subdomains automatically', () => {
+    const siteUrl = 'https://llndautomate.pages.dev';
+    expect(isApprovedOrigin('https://ff2d0669.llndautomate.pages.dev', siteUrl, [])).toBe(true);
+    expect(isApprovedOrigin('https://cc28056b.llndautomate.pages.dev', siteUrl, [])).toBe(true);
+    expect(isApprovedOrigin('http://ff2d0669.llndautomate.pages.dev', siteUrl, [])).toBe(false);
+    expect(isApprovedOrigin('https://llndautomate.pages.dev.attacker.example', siteUrl, [])).toBe(false);
+    expect(isApprovedOrigin('https://evil-llndautomate.pages.dev', siteUrl, [])).toBe(false);
+    expect(isApprovedOrigin('https://another-project.pages.dev', siteUrl, [])).toBe(false);
+    expect(originPolicy).toContain('url.hostname.endsWith(`.${previewParentHostname}`)');
+    expect(originPolicy).not.toContain("includes('llndautomate.pages.dev')");
+  });
+  it('keeps PUBLIC_SITE_URL and the explicit origin allowlist approved', () => {
+    const siteUrl = 'https://llndautomate.pages.dev';
+    const allowlist = ['http://localhost:5173'];
+    expect(isApprovedOrigin(siteUrl, siteUrl, allowlist)).toBe(true);
+    expect(isApprovedOrigin('http://localhost:5173', siteUrl, allowlist)).toBe(true);
+    expect(invite).toContain('INVITATION_REDIRECT_ALLOWLIST');
+    expect(invite).toContain('return siteUrl;');
   });
 });
 

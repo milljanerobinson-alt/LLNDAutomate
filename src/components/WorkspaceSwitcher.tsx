@@ -82,10 +82,9 @@ export function switchTo(workspace: AnyWorkspace) {
 
 interface WorkspaceSwitcherProps {
   currentWorkspace: AnyWorkspace;
-  menuPlacement?: 'up' | 'down';
 }
 
-export function WorkspaceSwitcher({ currentWorkspace, menuPlacement = 'down' }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) {
   const { user, profile, signOut } = useAuth();
   const { workspaces: customerAccess, loading: accessLoading } = useWorkspaceAccess();
   const [open, setOpen] = useState(false);
@@ -146,9 +145,7 @@ export function WorkspaceSwitcher({ currentWorkspace, menuPlacement = 'down' }: 
       </button>
 
       {open && (
-        <div className={`absolute right-0 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden ${
-          menuPlacement === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
-        }`}>
+        <div className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
           {/* Header */}
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/60">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Switch Workspace</p>

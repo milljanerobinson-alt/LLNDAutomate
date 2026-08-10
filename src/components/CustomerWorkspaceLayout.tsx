@@ -106,7 +106,6 @@ export function CustomerWorkspaceLayout({ workspace, currentPage, onPageChange, 
             return <button key={item.key} onClick={() => navigate(item.key)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${active ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><Icon className={`w-4 h-4 ${active ? 'text-primary-600' : 'text-slate-400'}`} /><span>{item.label}</span></button>;
           })}
         </nav>
-        <div className="px-4 py-4 border-t border-slate-200"><WorkspaceSwitcher currentWorkspace={workspace} menuPlacement="up" /></div>
       </aside>
       <div className="flex-1 min-w-0 flex flex-col h-screen">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 shrink-0">

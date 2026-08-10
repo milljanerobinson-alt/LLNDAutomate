@@ -1,30 +1,41 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isApprovedOrigin, parseOrigin } from "./origin-policy.ts";
 
 const allowed = new Set(["administration","candidate_support","technical"]);
 
+function configuredOrigins() {
+  const siteUrl = parseOrigin(Deno.env.get("PUBLIC_SITE_URL"));
+  if (!siteUrl) throw new Error("PUBLIC_SITE_URL is required and must be a valid HTTP(S) origin");
+  const allowlist = (Deno.env.get("INVITATION_REDIRECT_ALLOWLIST") ?? "")
+    .split(",")
+    .map((value) => parseOrigin(value))
+    .filter((value): value is string => Boolean(value));
+  return { siteUrl, allowlist };
+}
+
 function approvedSiteUrl(req: Request) {
-  const configured = Deno.env.get("PUBLIC_SITE_URL")?.replace(/\/$/, "");
-  if (!configured) throw new Error("PUBLIC_SITE_URL is required");
-  const approved = new Set(
-    [configured, ...(Deno.env.get("INVITATION_REDIRECT_ALLOWLIST") ?? "").split(",")]
-      .map((value) => value.trim().replace(/\/$/, ""))
-      .filter(Boolean),
-  );
-  const origin = req.headers.get("origin")?.replace(/\/$/, "");
-  if (origin && !approved.has(origin)) throw new Error("Invitation origin is not approved");
-  return configured;
+  const { siteUrl, allowlist } = configuredOrigins();
+  const origin = req.headers.get("origin");
+  if (origin && !isApprovedOrigin(origin, siteUrl, allowlist)) throw new Error("Invitation origin is not approved");
+  return siteUrl;
 }
 
 function corsHeaders(req: Request) {
-  const origin = req.headers.get("origin")?.replace(/\/$/, "");
-  const configured = Deno.env.get("PUBLIC_SITE_URL")?.replace(/\/$/, "");
-  const local = (Deno.env.get("INVITATION_REDIRECT_ALLOWLIST") ?? "").split(",").map((v) => v.trim().replace(/\/$/, ""));
-  return {
-    "Access-Control-Allow-Origin": origin && [configured, ...local].includes(origin) ? origin : configured ?? "null",
+  const headers: Record<string, string> = {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Vary": "Origin",
   };
+  const origin = req.headers.get("origin");
+  try {
+    const { siteUrl, allowlist } = configuredOrigins();
+    if (origin && isApprovedOrigin(origin, siteUrl, allowlist)) {
+      headers["Access-Control-Allow-Origin"] = parseOrigin(origin)!;
+    }
+  } catch {
+    // Missing or invalid configuration fails closed: no origin is reflected.
+  }
+  return headers;
 }
 
 Deno.serve(async (req) => {
