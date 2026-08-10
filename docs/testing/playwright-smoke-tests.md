@@ -30,13 +30,48 @@ a test fails, under `test-results/`; successful runs do not retain browser artif
 It fails on uncaught page exceptions, browser console errors, and failed or HTTP-error
 document, script, or stylesheet requests.
 
-## Authentication
+## Issue #40 authenticated staging gate
 
-Authenticated flows are intentionally excluded. A later authenticated suite would
-require safe, non-production test credentials supplied only through environment
-variables, for example `E2E_TEST_EMAIL` and `E2E_TEST_PASSWORD`. Never commit these
-values. Authenticated Cloudflare previews also require their preview hostnames in the
-Supabase redirect allowlist (for example `https://*.llndautomate.pages.dev/**`).
+The authenticated suite is deliberately separate from the 12-test public smoke suite.
+It must target the actual HTTPS Cloudflare branch preview and staging Supabase backend,
+using dedicated test identities rather than the Product Owner account. Values are read
+only from environment variables and must never be committed:
+
+```text
+BASE_URL
+E2E_SUPABASE_URL
+E2E_SUPABASE_ANON_KEY
+E2E_SUPABASE_SERVICE_ROLE_KEY
+E2E_ADMIN_EMAIL
+E2E_ADMIN_PASSWORD
+E2E_LIMITED_EMAIL
+E2E_LIMITED_PASSWORD
+E2E_INVITE_EMAIL
+E2E_INVITE_PASSWORD
+```
+
+`E2E_ADMIN_EMAIL` must be a staging-only Administration user assigned all three staff
+workspaces. `E2E_LIMITED_EMAIL` must be a staging-only user assigned only Candidate
+Support. `E2E_INVITE_EMAIL` must be a disposable `+e2e` address distinct from both test
+identities. The service-role key remains in the Playwright Node process and is used only
+to assert and remove that disposable fixture; it is never injected into the browser.
+
+Run the authenticated gate:
+
+```bash
+BASE_URL=https://<branch-preview>.llndautomate.pages.dev \
+E2E_SUPABASE_URL=... \
+E2E_SUPABASE_ANON_KEY=... \
+E2E_SUPABASE_SERVICE_ROLE_KEY=... \
+E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... \
+E2E_LIMITED_EMAIL=... E2E_LIMITED_PASSWORD=... \
+E2E_INVITE_EMAIL=... E2E_INVITE_PASSWORD=... \
+npm run test:e2e:authenticated
+```
+
+Issue #40 is not ready for Product Owner testing until focused/security tests and the
+production build pass, followed by both `npm run test:e2e` and the authenticated command
+above against the actual branch preview and staging backend.
 
 ## Possible CI follow-up
 

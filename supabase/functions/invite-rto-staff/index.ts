@@ -73,15 +73,10 @@ Deno.serve(async (req) => {
       data: { full_name: String(fullName ?? "").trim(), invitation_grant_id: grantId },
     });
     if (error || !data.user) {
-      const { data: existingGrant, error: reconciliationError } = await service
-        .from("staff_invitation_grants").select("user_id,status").eq("id", grantId).maybeSingle();
-      if (!reconciliationError && existingGrant?.user_id && existingGrant.status === "pending") {
-        const { error: relinkError } = await service.rpc("link_staff_invitation", {
-          p_grant_id: grantId,
-          p_user_id: existingGrant.user_id,
-        });
-        if (!relinkError) return json({ invited: true, reconciled: true }, 200, req);
-      }
+      const { error: reconciliationError } = await service.rpc("reconcile_staff_invitation", {
+        p_grant_id: grantId,
+      });
+      if (!reconciliationError) return json({ invited: true, reconciled: true }, 200, req);
       return json({ error: error?.message ?? reconciliationError?.message ?? "Invitation failed", retryable: true }, 400, req);
     }
     const { error: linkedError } = await service.rpc("link_staff_invitation", {

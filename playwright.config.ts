@@ -24,15 +24,22 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-chromium',
+      testMatch: /product-boundary\.smoke\.spec\.ts/,
       use: { viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile-chromium',
+      testMatch: /product-boundary\.smoke\.spec\.ts/,
       use: {
         viewport: { width: 390, height: 844 },
         isMobile: true,
         hasTouch: true,
       },
+    },
+    {
+      name: 'authenticated-chromium',
+      testMatch: /issue040\.authenticated\.spec\.ts/,
+      use: { viewport: { width: 1440, height: 900 } },
     },
   ],
 });

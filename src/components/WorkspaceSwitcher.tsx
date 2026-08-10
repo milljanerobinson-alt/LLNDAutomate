@@ -131,6 +131,7 @@ export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) 
   return (
     <div className="relative" ref={ref}>
       <button
+        data-testid="workspace-switcher-trigger"
         onClick={() => setOpen(s => !s)}
         className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-all text-sm font-medium text-slate-700 shadow-sm"
       >
@@ -145,7 +146,7 @@ export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) 
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+        <div data-testid="workspace-switcher-menu" className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
           {/* Header */}
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/60">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Switch Workspace</p>
@@ -165,6 +166,7 @@ export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) 
                 return (
                   <button
                     key={ws.key}
+                    data-workspace={ws.key}
                     onClick={() => {
                       if (!isCurrent) switchTo(ws.key);
                       setOpen(false);

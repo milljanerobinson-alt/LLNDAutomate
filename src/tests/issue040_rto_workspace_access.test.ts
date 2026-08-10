@@ -10,6 +10,7 @@ const layout = read('components/CustomerWorkspaceLayout.tsx');
 const palette = read('components/CommandPalette.tsx');
 const app = read('App.tsx');
 const migration = read('../supabase/migrations/20260809092000_issue040_rto_workspace_access.sql');
+const invitationFix = read('../supabase/migrations/20260810170000_issue040_invitation_role_reconciliation.sql');
 const invite = read('../supabase/functions/invite-rto-staff/index.ts');
 const originPolicy = read('../supabase/functions/invite-rto-staff/origin-policy.ts');
 
@@ -84,6 +85,24 @@ describe('Issue #40 Administration controls', () => {
     expect(invite).toContain('reconciled: true');
     expect(invite).not.toContain('organisation_id: access.organisation_id, workspaces: selected');
     expect(migration).not.toContain("org_id := nullif(NEW.raw_user_meta_data->>'organisation_id'");
+  });
+  it('permits only the exact pending-grant role transition in the legacy role trigger', () => {
+    expect(invitationFix).toContain('authorised_invitation_transition');
+    expect(invitationFix).toContain("grant_row.status = 'pending'");
+    expect(invitationFix).toContain("NEW.role = 'trainer'");
+    expect(invitationFix).toContain('NEW.is_active = false');
+    expect(invitationFix).toContain("RAISE EXCEPTION 'Only admins can change user roles'");
+    expect(invitationFix).toContain('REVOKE ALL ON FUNCTION public.check_profile_role_unchanged() FROM PUBLIC, anon, authenticated, service_role');
+  });
+  it('reconciles an already-sent auth invitation from the server grant email only', () => {
+    expect(invitationFix).toContain('public.reconcile_staff_invitation');
+    expect(invitationFix).toContain('lower(invited_user.email) = grant_row.invited_email');
+    expect(invitationFix).toContain("grant_row.status <> 'pending'");
+    expect(invitationFix).toContain('coalesce(cardinality(matching_users), 0) <> 1');
+    expect(invitationFix).toContain('PERFORM public.link_staff_invitation(p_grant_id, invited_user_id)');
+    expect(invitationFix).toContain('GRANT EXECUTE ON FUNCTION public.reconcile_staff_invitation(uuid) TO service_role');
+    expect(invite).toContain('service.rpc("reconcile_staff_invitation"');
+    expect(invite).not.toContain('.from("staff_invitation_grants").select("user_id,status")');
   });
   it('creates a new RTO for direct signup without accepting an existing organisation', () => {
     expect(migration).toContain("IF NEW.invited_at IS NOT NULL THEN");
