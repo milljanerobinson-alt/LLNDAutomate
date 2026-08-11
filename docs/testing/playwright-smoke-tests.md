@@ -48,15 +48,26 @@ E2E_CANDIDATE_SUPPORT_EMAIL
 E2E_CANDIDATE_SUPPORT_PASSWORD
 E2E_TECHNICAL_EMAIL
 E2E_TECHNICAL_PASSWORD
+E2E_SUPER_USER_EMAIL
+E2E_SUPER_USER_PASSWORD
 E2E_INVITE_EMAIL
 E2E_INVITE_PASSWORD
 ```
 
-The permanent staging convention is Admin Test (`milljanerobinson+admin@gmail.com`),
-Candidate Support Test (`milljanerobinson+cs@gmail.com`) and Technical Test
-(`milljanerobinson+tech@gmail.com`). The Administration identity has all three staff
-workspaces; the limited identity has Candidate Support only; the Technical identity has
-Technical only. `E2E_INVITE_EMAIL` must be a separate disposable `+e2e` address.
+The permanent staging identity convention is:
+
+| Identity | Email | Required workspaces |
+|---|---|---|
+| Admin Test | `milljanerobinson+admin@gmail.com` | Administration only |
+| Candidate Support Test | `milljanerobinson+cs@gmail.com` | Candidate Support only |
+| Technical Test | `milljanerobinson+tech@gmail.com` | Technical only |
+| Super User | `milljanerobinson+super@gmail.com` | Administration, Candidate Support, Technical |
+
+The Super User owns multi-workspace switcher coverage. Each single-workspace identity
+proves its corresponding direct-route and navigation boundary. The permanent users are
+read-only test fixtures: ordinary runs never change their workspace permissions.
+`E2E_INVITE_EMAIL` must be a separate Gmail alias containing `+e2e`; it is the only
+identity created and removed by the lifecycle tests.
 The service-role key remains in the Playwright Node process and is used only
 to prepare/assert/remove the disposable fixture and generate a deterministic
 Supabase invitation action link; it is never injected into the browser. The test
@@ -76,6 +87,7 @@ E2E_SUPABASE_SERVICE_ROLE_KEY=... \
 E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... \
 E2E_CANDIDATE_SUPPORT_EMAIL=... E2E_CANDIDATE_SUPPORT_PASSWORD=... \
 E2E_TECHNICAL_EMAIL=... E2E_TECHNICAL_PASSWORD=... \
+E2E_SUPER_USER_EMAIL=... E2E_SUPER_USER_PASSWORD=... \
 E2E_INVITE_EMAIL=... E2E_INVITE_PASSWORD=... \
 npm run test:e2e:authenticated
 ```

@@ -18,9 +18,25 @@ export const authenticatedEnvironment = {
   candidateSupportPassword: requiredEnvironment('E2E_CANDIDATE_SUPPORT_PASSWORD'),
   technicalEmail: requiredEnvironment('E2E_TECHNICAL_EMAIL').toLowerCase(),
   technicalPassword: requiredEnvironment('E2E_TECHNICAL_PASSWORD'),
+  superUserEmail: requiredEnvironment('E2E_SUPER_USER_EMAIL').toLowerCase(),
+  superUserPassword: requiredEnvironment('E2E_SUPER_USER_PASSWORD'),
   inviteEmail: requiredEnvironment('E2E_INVITE_EMAIL').toLowerCase(),
   invitePassword: requiredEnvironment('E2E_INVITE_PASSWORD'),
 };
+
+const permanentIdentities = [
+  ['E2E_ADMIN_EMAIL', authenticatedEnvironment.adminEmail, 'milljanerobinson+admin@gmail.com'],
+  ['E2E_CANDIDATE_SUPPORT_EMAIL', authenticatedEnvironment.candidateSupportEmail, 'milljanerobinson+cs@gmail.com'],
+  ['E2E_TECHNICAL_EMAIL', authenticatedEnvironment.technicalEmail, 'milljanerobinson+tech@gmail.com'],
+  ['E2E_SUPER_USER_EMAIL', authenticatedEnvironment.superUserEmail, 'milljanerobinson+super@gmail.com'],
+] as const;
+
+for (const [name, actual, expected] of permanentIdentities) {
+  if (actual !== expected) throw new Error(`${name} must use the permanent staging identity ${expected}`);
+}
+if (new Set(permanentIdentities.map(([, email]) => email)).size !== permanentIdentities.length) {
+  throw new Error('Permanent authenticated staging identities must be distinct');
+}
 
 const previewUrl = new URL(authenticatedEnvironment.baseUrl);
 if (previewUrl.protocol !== 'https:' || !previewUrl.hostname.endsWith('.llndautomate.pages.dev')) {
@@ -29,7 +45,7 @@ if (previewUrl.protocol !== 'https:' || !previewUrl.hostname.endsWith('.llndauto
 if (!authenticatedEnvironment.inviteEmail.includes('+e2e')) {
   throw new Error('E2E_INVITE_EMAIL must be a dedicated disposable +e2e address');
 }
-if ([authenticatedEnvironment.adminEmail, authenticatedEnvironment.candidateSupportEmail, authenticatedEnvironment.technicalEmail].includes(authenticatedEnvironment.inviteEmail)) {
+if (permanentIdentities.some(([, email]) => email === authenticatedEnvironment.inviteEmail)) {
   throw new Error('The disposable invitation identity must differ from the authenticated test identities');
 }
 

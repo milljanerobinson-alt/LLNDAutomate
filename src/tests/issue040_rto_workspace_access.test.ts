@@ -17,6 +17,8 @@ const invite = read('../supabase/functions/invite-rto-staff/index.ts');
 const originPolicy = read('../supabase/functions/invite-rto-staff/origin-policy.ts');
 const acceptInvite = read('pages/AcceptInvitePage.tsx');
 const supabaseClient = read('lib/supabase.ts');
+const authenticatedE2e = read('../tests/e2e/issue040.authenticated.spec.ts');
+const authenticatedHelper = read('../tests/e2e/helpers/authenticated-session.ts');
 
 describe('Issue #40 workspace access model', () => {
   it('defines exactly the three customer workspace identifiers', () => {
@@ -188,6 +190,25 @@ describe('Issue #40 Administration controls', () => {
     expect(access).toContain('} else if (profile?.is_active) {');
     expect(access).toContain('Inactive invited');
     expect(access).toContain('setWorkspaces([])');
+  });
+  it('uses four distinct permanent staging identities and a disposable invite identity', () => {
+    for (const variable of [
+      'E2E_ADMIN_EMAIL', 'E2E_CANDIDATE_SUPPORT_EMAIL', 'E2E_TECHNICAL_EMAIL',
+      'E2E_SUPER_USER_EMAIL', 'E2E_INVITE_EMAIL',
+    ]) expect(authenticatedHelper).toContain(variable);
+    expect(authenticatedHelper).toContain('milljanerobinson+admin@gmail.com');
+    expect(authenticatedHelper).toContain('milljanerobinson+cs@gmail.com');
+    expect(authenticatedHelper).toContain('milljanerobinson+tech@gmail.com');
+    expect(authenticatedHelper).toContain('milljanerobinson+super@gmail.com');
+    expect(authenticatedHelper).toContain("inviteEmail.includes('+e2e')");
+  });
+  it('assigns single-workspace boundaries and ordered switching to the correct identities', () => {
+    expect(authenticatedE2e).toContain("expectWorkspaceMenu(page, ['administration'])");
+    expect(authenticatedE2e).toContain("expectWorkspaceMenu(page, ['candidate_support'])");
+    expect(authenticatedE2e).toContain("expectWorkspaceMenu(page, ['technical'])");
+    expect(authenticatedE2e).toContain('authenticatePage(page, env.superUserEmail, env.superUserPassword)');
+    expect(authenticatedE2e).toContain('expectWorkspaceMenu(page, WORKSPACE_ORDER)');
+    expect(authenticatedE2e).not.toContain('updateUserById');
   });
 });
 

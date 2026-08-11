@@ -23,7 +23,10 @@ function observeRuntime(page: Page): RuntimeEvidence {
     }
   });
   page.on('response', response => {
-    if (response.url().includes('/invite-rto-staff') && response.status() >= 400) {
+    const resourceType = response.request().resourceType();
+    const isCritical = ['document', 'script', 'stylesheet'].includes(resourceType)
+      || response.url().includes('/functions/v1/');
+    if (isCritical && response.status() >= 400) {
       evidence.criticalFailures.push(`${response.request().method()} ${response.url()}: HTTP ${response.status()}`);
     }
   });
@@ -40,75 +43,97 @@ const test = base.extend<{ runtimeEvidence: RuntimeEvidence }>({
   },
 });
 
+const WORKSPACE_ORDER = ['administration', 'candidate_support', 'technical'] as const;
+
+async function expectWorkspaceMenu(page: Page, expected: readonly string[]) {
+  await page.locator('header').getByTestId('workspace-switcher-trigger').click();
+  const menu = page.getByTestId('workspace-switcher-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.locator('[data-workspace]')).toHaveCount(expected.length);
+  expect(await menu.locator('[data-workspace]').evaluateAll(elements =>
+    elements.map(element => element.getAttribute('data-workspace')),
+  )).toEqual(expected);
+  await expect(menu).not.toContainText('Candidate Assessment');
+  return menu;
+}
+
 test.describe.serial('Issue #40 authenticated staging gate', () => {
-  test('dedicated Administration identity establishes an authenticated session', async ({ page, runtimeEvidence: _runtime }) => {
+  test('Administration-only identity is confined to Administration and can use Users', async ({ page, runtimeEvidence: _runtime }) => {
     const user = await authenticatePage(page, env.adminEmail, env.adminPassword);
     await page.goto('/#/rto-admin/dashboard');
     await expect(page).toHaveURL(/#\/rto-admin\/dashboard$/);
-    await expect(page.getByTestId('workspace-switcher-trigger')).toBeVisible();
     expect(user.email?.toLowerCase()).toBe(env.adminEmail);
-  });
+    await expectWorkspaceMenu(page, ['administration']);
 
-  test('top-right switcher contains only the ordered assigned staff workspaces and navigates', async ({ page, runtimeEvidence: _runtime }) => {
-    await authenticatePage(page, env.adminEmail, env.adminPassword);
-    await page.goto('/#/rto-admin/dashboard');
-    const trigger = page.locator('header').getByTestId('workspace-switcher-trigger');
-    await trigger.click();
-    const menu = page.getByTestId('workspace-switcher-menu');
-    await expect(menu).toBeVisible();
-    await expect(menu.locator('[data-workspace]')).toHaveCount(3);
-    expect(await menu.locator('[data-workspace]').evaluateAll(elements =>
-      elements.map(element => element.getAttribute('data-workspace')),
-    )).toEqual(['administration', 'candidate_support', 'technical']);
-    await expect(menu).not.toContainText('Candidate Assessment');
-
-    await menu.locator('[data-workspace="candidate_support"]').click();
-    await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
-    await expect(page.locator('header')).toContainText('Support Queue');
-
-    await page.locator('header').getByTestId('workspace-switcher-trigger').click();
-    await page.getByTestId('workspace-switcher-menu').locator('[data-workspace="technical"]').click();
-    await expect(page).toHaveURL(/#\/technical\/dashboard$/);
-    await expect(page.locator('header')).toContainText('System Health');
-
-    await page.locator('header').getByTestId('workspace-switcher-trigger').click();
-    await page.getByTestId('workspace-switcher-menu').locator('[data-workspace="administration"]').click();
+    await page.goto('/#/candidate-support/dashboard');
     await expect(page).toHaveURL(/#\/rto-admin\/dashboard$/);
+    await page.goto('/#/technical/dashboard');
+    await expect(page).toHaveURL(/#\/rto-admin\/dashboard$/);
+
+    await page.goto('/#/rto-admin/users');
+    await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Invite staff user' })).toBeVisible();
   });
 
-  test('permission-limited identity is redirected away from a direct unauthorized workspace URL', async ({ page, runtimeEvidence: _runtime }) => {
-    await authenticatePage(page, env.candidateSupportEmail, env.candidateSupportPassword);
-    await page.goto('/#/technical/dashboard');
-    await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
-    await expect(page.locator('header')).toContainText('Support Queue');
-    await page.locator('header').getByTestId('workspace-switcher-trigger').click();
-    await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace]')).toHaveCount(1);
-    await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace="candidate_support"]')).toBeVisible();
+  test('Candidate Support-only identity is confined to eligible support cases', async ({ page, runtimeEvidence: _runtime }) => {
+    const user = await authenticatePage(page, env.candidateSupportEmail, env.candidateSupportPassword);
+    const supportResponse = page.waitForResponse(response =>
+      response.url().includes('/rest/v1/support_cases') && response.request().method() === 'GET',
+    );
+    await page.goto('/#/candidate-support/candidates');
+    await expect(page).toHaveURL(/#\/candidate-support\/candidates$/);
+    await expect(page.getByRole('heading', { name: 'Candidates Requiring Support' })).toBeVisible();
+    const response = await supportResponse;
+    expect(response.status()).toBe(200);
+    const cases = await response.json() as Array<{ assigned_user_id: string | null }>;
+    expect(cases.every(item => item.assigned_user_id === null || item.assigned_user_id === user.id)).toBe(true);
+    await expectWorkspaceMenu(page, ['candidate_support']);
 
     await page.goto('/#/rto-admin/dashboard');
     await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
+    await page.goto('/#/technical/dashboard');
+    await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
   });
 
-  test('Technical-only identity cannot enter Administration or Candidate Support', async ({ page, runtimeEvidence: _runtime }) => {
+  test('Technical-only identity has no Administration, Support or broad candidate browsing', async ({ page, runtimeEvidence: _runtime }) => {
     await authenticatePage(page, env.technicalEmail, env.technicalPassword);
+    const candidateRequests: string[] = [];
+    page.on('request', request => {
+      if (/\/rest\/v1\/(students|support_cases|assessment_invitations)/.test(request.url())) candidateRequests.push(request.url());
+    });
     await page.goto('/#/technical/dashboard');
     await expect(page).toHaveURL(/#\/technical\/dashboard$/);
-    await page.locator('header').getByTestId('workspace-switcher-trigger').click();
-    const menu = page.getByTestId('workspace-switcher-menu');
-    await expect(menu.locator('[data-workspace]')).toHaveCount(1);
-    await expect(menu.locator('[data-workspace="technical"]')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Technical Workspace' })).toBeVisible();
+    await expectWorkspaceMenu(page, ['technical']);
 
     await page.goto('/#/rto-admin/dashboard');
     await expect(page).toHaveURL(/#\/technical\/dashboard$/);
     await page.goto('/#/candidate-support/dashboard');
     await expect(page).toHaveURL(/#\/technical\/dashboard$/);
+    await page.goto('/#/rto-admin/candidates');
+    await expect(page).toHaveURL(/#\/technical\/dashboard$/);
+    expect(candidateRequests).toEqual([]);
   });
 
-  test('Administration Users page loads', async ({ page, runtimeEvidence: _runtime }) => {
-    await authenticatePage(page, env.adminEmail, env.adminPassword);
+  test('Super User owns ordered multi-workspace switching without route leakage', async ({ page, runtimeEvidence: _runtime }) => {
+    const user = await authenticatePage(page, env.superUserEmail, env.superUserPassword);
+    expect(user.email?.toLowerCase()).toBe(env.superUserEmail);
+    await page.goto('/#/rto-admin/dashboard');
+    const menu = await expectWorkspaceMenu(page, WORKSPACE_ORDER);
+
+    await menu.locator('[data-workspace="candidate_support"]').click();
+    await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
+    await expect(page.locator('header')).toContainText('Support Queue');
+    let nextMenu = await expectWorkspaceMenu(page, WORKSPACE_ORDER);
+    await nextMenu.locator('[data-workspace="technical"]').click();
+    await expect(page).toHaveURL(/#\/technical\/dashboard$/);
+    await expect(page.locator('header')).toContainText('System Health');
+    nextMenu = await expectWorkspaceMenu(page, WORKSPACE_ORDER);
+    await nextMenu.locator('[data-workspace="administration"]').click();
+    await expect(page).toHaveURL(/#\/rto-admin\/dashboard$/);
+
     await page.goto('/#/rto-admin/users');
     await expect(page.getByRole('heading', { name: 'Users', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Invite staff user' })).toBeVisible();
   });
 
   test('preview preflight and invitation POST preserve canonical invited state', async ({ page, runtimeEvidence: _runtime }) => {
