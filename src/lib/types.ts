@@ -32,6 +32,8 @@ export interface Profile {
   avatar_url: string | null;
   axcelerate_contact_id: number | null;
   otp_disabled: boolean;
+  is_active: boolean;
+  organisation_id: string | null;
   created_at: string;
 }
 

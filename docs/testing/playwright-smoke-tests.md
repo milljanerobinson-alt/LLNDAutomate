@@ -58,7 +58,13 @@ Candidate Support Test (`milljanerobinson+cs@gmail.com`) and Technical Test
 workspaces; the limited identity has Candidate Support only; the Technical identity has
 Technical only. `E2E_INVITE_EMAIL` must be a separate disposable `+e2e` address.
 The service-role key remains in the Playwright Node process and is used only
-to assert and remove that disposable fixture; it is never injected into the browser.
+to prepare/assert/remove the disposable fixture and generate a deterministic
+Supabase invitation action link; it is never injected into the browser. The test
+opens the real Auth verification endpoint and `/accept-invite` UI, sets the password
+in the browser, and then verifies the same membership and exact workspace grant.
+Generating the action link is the closest deterministic substitute for reading the
+actual invitation from an external mailbox; the separate browser test still verifies
+that the deployed `invite-rto-staff` OPTIONS and POST requests succeed.
 
 Run the authenticated gate:
 

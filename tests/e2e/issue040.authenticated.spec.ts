@@ -111,7 +111,7 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
     await expect(page.getByRole('heading', { name: 'Invite staff user' })).toBeVisible();
   });
 
-  test('preview preflight, invitation POST and invited-to-active lifecycle succeed safely', async ({ page, runtimeEvidence: _runtime }) => {
+  test('preview preflight and invitation POST preserve canonical invited state', async ({ page, runtimeEvidence: _runtime }) => {
     await removeDisposableInvitationFixture();
     const service = serviceClient();
     try {
@@ -159,30 +159,91 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
       expect(memberships).toHaveLength(1);
       expect(memberships![0].status).toBe('invited');
       expect(memberships![0].organisation_id).toBe(adminMembership!.organisation_id);
-      const membershipId = memberships![0].id;
       expect(profile?.is_active).toBe(false);
       expect(accessBefore).toBe(0);
 
       const { error: retryError } = await service.rpc('reconcile_staff_invitation', { p_grant_id: grant!.id });
       expect(retryError).toBeNull();
       const { data: retryMemberships } = await service.from('organisation_memberships').select('id,status').eq('user_id', userId);
-      expect(retryMemberships).toEqual([{ id: membershipId, status: 'invited' }]);
+      expect(retryMemberships).toEqual([{ id: memberships![0].id, status: 'invited' }]);
+    } finally {
+      await removeDisposableInvitationFixture();
+    }
+  });
 
-      const { error: acceptanceError } = await service.auth.admin.updateUserById(userId, {
-        email_confirm: true,
-        password: env.invitePassword,
+  test('real invitation action link uses the acceptance UI and activates the same membership once', async ({ page, runtimeEvidence: _runtime }) => {
+    await removeDisposableInvitationFixture();
+    const service = serviceClient();
+    try {
+      const { data: users, error: usersError } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      expect(usersError).toBeNull();
+      const adminUser = users.users.find(user => user.email?.toLowerCase() === env.adminEmail);
+      expect(adminUser).toBeTruthy();
+      const { data: adminMembership, error: adminMembershipError } = await service
+        .from('organisation_memberships').select('organisation_id').eq('user_id', adminUser!.id).single();
+      expect(adminMembershipError).toBeNull();
+
+      const { data: grantId, error: grantError } = await service.rpc('prepare_staff_invitation', {
+        p_email: env.inviteEmail,
+        p_full_name: 'LLND E2E Invite',
+        p_organisation_id: adminMembership!.organisation_id,
+        p_workspaces: ['candidate_support'],
+        p_inviter_id: adminUser!.id,
       });
-      expect(acceptanceError).toBeNull();
+      expect(grantError).toBeNull();
 
-      await expect.poll(async () => {
-        const { data } = await service.from('organisation_memberships').select('status').eq('user_id', userId).single();
-        return data?.status;
-      }).toBe('active');
+      // Supabase Admin generateLink is the deterministic substitute for reading
+      // the actual mailbox. It uses the real invite verification endpoint and
+      // frontend callback, but deliberately does not send a second email.
+      const { data: generated, error: generateError } = await service.auth.admin.generateLink({
+        type: 'invite',
+        email: env.inviteEmail,
+        options: {
+          redirectTo: `${env.baseUrl.replace(/\/$/, '')}/accept-invite`,
+          data: { full_name: 'LLND E2E Invite', invitation_grant_id: grantId },
+        },
+      });
+      expect(generateError).toBeNull();
+      expect(generated.properties?.action_link).toBeTruthy();
+      expect(generated.user).toBeTruthy();
+
+      const { error: linkError } = await service.rpc('link_staff_invitation', {
+        p_grant_id: grantId,
+        p_user_id: generated.user.id,
+      });
+      expect(linkError).toBeNull();
+
+      const [{ data: invitedMemberships }, { data: invitedProfile }, { count: accessBefore }] = await Promise.all([
+        service.from('organisation_memberships').select('id,organisation_id,status').eq('user_id', generated.user.id),
+        service.from('profiles').select('is_active').eq('id', generated.user.id).single(),
+        service.from('user_workspace_access').select('*', { count: 'exact', head: true }).eq('user_id', generated.user.id),
+      ]);
+      expect(invitedMemberships).toHaveLength(1);
+      expect(invitedMemberships![0].status).toBe('invited');
+      expect(invitedProfile?.is_active).toBe(false);
+      expect(accessBefore).toBe(0);
+      const membershipId = invitedMemberships![0].id;
+
+      await page.goto(generated.properties!.action_link);
+      await expect(page).toHaveURL(new RegExp(`${new URL(env.baseUrl).hostname.replace(/\./g, '\\.')}\/accept-invite`));
+      await expect(page.getByRole('heading', { name: 'Set up your LLND Automate account' })).toBeVisible();
+
+      // Email confirmation alone must not activate access before password setup.
+      const { data: confirmedMembership } = await service.from('organisation_memberships')
+        .select('id,status').eq('user_id', generated.user.id).single();
+      expect(confirmedMembership).toEqual({ id: membershipId, status: 'invited' });
+
+      await page.getByLabel('Password', { exact: true }).fill(env.invitePassword);
+      await page.getByLabel('Confirm password').fill(env.invitePassword);
+      await page.getByRole('button', { name: 'Set up my account' }).click();
+      await expect(page).toHaveURL(/#\/candidate-support\/dashboard$/);
+      await expect(page.locator('header')).toContainText('Support Queue');
+
       const [{ data: activeMemberships }, { data: activeProfile }, { data: workspaceRows }, { data: acceptedGrant }] = await Promise.all([
-        service.from('organisation_memberships').select('id,organisation_id,status').eq('user_id', userId),
-        service.from('profiles').select('is_active').eq('id', userId).single(),
-        service.from('user_workspace_access').select('workspace').eq('user_id', userId),
-        service.from('staff_invitation_grants').select('status').eq('id', grant!.id).single(),
+        service.from('organisation_memberships').select('id,organisation_id,status').eq('user_id', generated.user.id),
+        service.from('profiles').select('is_active').eq('id', generated.user.id).single(),
+        service.from('user_workspace_access').select('workspace').eq('user_id', generated.user.id),
+        service.from('staff_invitation_grants').select('status').eq('id', grantId).single(),
       ]);
       expect(activeMemberships).toEqual([{ id: membershipId, organisation_id: adminMembership!.organisation_id, status: 'active' }]);
       expect(activeProfile?.is_active).toBe(true);
@@ -196,12 +257,6 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
       });
       expect(invitedSignInError).toBeNull();
       expect(invitedSignIn.session).toBeTruthy();
-
-      await page.reload();
-      const activeRow = page.locator('[data-testid="organisation-staff-row"]', { hasText: env.inviteEmail });
-      await expect(activeRow.getByTestId('staff-status')).toHaveText('active');
-      await authenticatePage(page, env.inviteEmail, env.invitePassword);
-      await page.goto('/#/candidate-support/dashboard');
       await page.locator('header').getByTestId('workspace-switcher-trigger').click();
       await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace]')).toHaveCount(1);
       await expect(page.getByTestId('workspace-switcher-menu').locator('[data-workspace="candidate_support"]')).toBeVisible();

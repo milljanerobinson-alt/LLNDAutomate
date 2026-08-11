@@ -64,6 +64,7 @@ import { QuizPage } from './pages/QuizPage';
 import { StudentLandingPage } from './pages/StudentLandingPage';
 import OAuthConsentPage from './pages/OAuthConsentPage';
 import { LoginPage, type LoginContext } from './pages/LoginPage';
+import { AcceptInvitePage } from './pages/AcceptInvitePage';
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ function Router() {
   // Resolves LLND at / and EIOS at /eios, migrating legacy LLND paths,
   // and normalises OAuth consent path-based redirects.
   const product = resolveProduct();
+  const isInviteAcceptancePath = window.location.pathname === '/accept-invite';
 
   useEffect(() => {
     document.title = product === 'llnd' ? 'LLND Automate' : 'EIOS';
@@ -122,6 +124,10 @@ function Router() {
 
   // While auth or workspace access is loading, show loader — do not redirect.
   if (loading || (user && wsLoading)) return <FullScreenLoader />;
+
+  // Supabase Auth owns the callback fragment, so invitation acceptance uses a
+  // pathname route that survives both successful and failed implicit callbacks.
+  if (isInviteAcceptancePath) return <AcceptInvitePage />;
 
   const route = parseHash(hash);
 

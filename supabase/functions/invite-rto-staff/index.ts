@@ -58,7 +58,10 @@ Deno.serve(async (req) => {
     }
     const service = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const siteUrl = approvedSiteUrl(req);
-    const redirectTo = `${siteUrl.replace(/\/$/, "")}/#/llnd-automate/login`;
+    // Keep the callback route in the pathname. Supabase Auth uses the fragment
+    // for implicit-flow session/error parameters, so a hash-router destination
+    // would be overwritten before the application can render it.
+    const redirectTo = `${siteUrl.replace(/\/$/, "")}/accept-invite`;
     const normalEmail = email.trim().toLowerCase();
     const { data: grantId, error: grantError } = await service.rpc("prepare_staff_invitation", {
       p_email: normalEmail,

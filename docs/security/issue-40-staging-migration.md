@@ -12,3 +12,14 @@ Before applying it to staging:
 6. Do not deploy `invite-rto-staff` until the migration succeeds because it depends on the new invitation RPCs.
 
 After applying it, compare the recorded counts, confirm at least one active Administration member, confirm the Product Owner has Administration, Candidate Support and Technical, and test cross-RTO denial before deploying the Edge Function. If validation fails, stop application traffic and restore the verified recovery point; do not attempt an ad-hoc partial rollback of tenancy or RLS changes.
+
+After the original Issue #40 migration, apply the forward-only
+`20260811040000_issue040_activate_invitation_after_password.sql` before testing
+new invitation acceptance. It replaces only the already-installed activation
+function/trigger so confirmation alone remains invited/inactive and activation
+occurs atomically after password setup. Apply it through the normal migration
+runner; its explicit transaction rolls back the function and trigger replacement
+together on failure. The previously applied migration files must not be edited.
+
+Hosted Auth redirect, Resend SMTP and Invite User template steps are documented in
+`issue-40-auth-invitation-setup.md` and must be completed before Product Owner testing.

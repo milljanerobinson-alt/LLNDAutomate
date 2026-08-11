@@ -12,8 +12,11 @@ const app = read('App.tsx');
 const migration = read('../supabase/migrations/20260809092000_issue040_rto_workspace_access.sql');
 const invitationFix = read('../supabase/migrations/20260810170000_issue040_invitation_role_reconciliation.sql');
 const membershipFix = read('../supabase/migrations/20260810223000_issue040_canonical_invitation_membership.sql');
+const passwordActivation = read('../supabase/migrations/20260811040000_issue040_activate_invitation_after_password.sql');
 const invite = read('../supabase/functions/invite-rto-staff/index.ts');
 const originPolicy = read('../supabase/functions/invite-rto-staff/origin-policy.ts');
+const acceptInvite = read('pages/AcceptInvitePage.tsx');
+const supabaseClient = read('lib/supabase.ts');
 
 describe('Issue #40 workspace access model', () => {
   it('defines exactly the three customer workspace identifiers', () => {
@@ -72,11 +75,14 @@ describe('Issue #40 Administration controls', () => {
     expect(invite).toContain('SUPABASE_SERVICE_ROLE_KEY');
     expect(read('pages/workspace/UsersPage.tsx')).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
-  it('keeps invited accounts inactive until confirmed auth state activates them', () => {
+  it('keeps invited accounts inactive until confirmed auth and password setup activate them', () => {
     expect(migration).toContain("VALUES (grant_row.organisation_id,p_user_id,'invited'");
     expect(migration).toContain('is_active=false');
-    expect(migration).toContain('AFTER UPDATE OF email_confirmed_at ON auth.users');
-    expect(migration).toContain("SET status='active',activated_at=now()");
+    expect(passwordActivation).toContain('NEW.email_confirmed_at IS NULL');
+    expect(passwordActivation).toContain("NEW.encrypted_password = ''");
+    expect(passwordActivation).toContain('AFTER UPDATE OF email_confirmed_at, encrypted_password ON auth.users');
+    expect(passwordActivation).toContain("SET status='active',activated_at=now()");
+    expect(passwordActivation).toContain("AND status='pending'");
   });
   it('uses server-controlled invitation grants instead of browser tenant metadata', () => {
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS staff_invitation_grants');
@@ -163,6 +169,25 @@ describe('Issue #40 Administration controls', () => {
     expect(isApprovedOrigin('http://localhost:5173', siteUrl, allowlist)).toBe(true);
     expect(invite).toContain('INVITATION_REDIRECT_ALLOWLIST');
     expect(invite).toContain('return siteUrl;');
+  });
+  it('uses a trusted pathname callback that cannot be replaced by the Auth fragment', () => {
+    expect(invite).toContain('/accept-invite`');
+    expect(invite).not.toContain('/#/llnd-automate/login');
+    expect(app).toContain("window.location.pathname === '/accept-invite'");
+  });
+  it('captures no Auth tokens and renders a dedicated invitation setup experience', () => {
+    expect(supabaseClient).toContain("type: params.get('type')");
+    expect(supabaseClient).toContain("errorCode: params.get('error_code')");
+    expect(supabaseClient).not.toContain("params.get('access_token')");
+    expect(acceptInvite).toContain('Set up your LLND Automate account');
+    expect(acceptInvite).toContain('supabase.auth.updateUser({ password })');
+    expect(acceptInvite).toContain('This invitation link is invalid or has expired');
+    expect(acceptInvite).not.toContain('error_description');
+  });
+  it('does not derive staff workspace access for an inactive invited profile', () => {
+    expect(access).toContain('} else if (profile?.is_active) {');
+    expect(access).toContain('Inactive invited');
+    expect(access).toContain('setWorkspaces([])');
   });
 });
 

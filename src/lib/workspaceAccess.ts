@@ -43,10 +43,13 @@ export function useWorkspaceAccess(): UseWorkspaceAccessResult {
         workspace: legacyMap[row.workspace] ?? row.workspace as CustomerWorkspace,
         is_primary: row.is_primary,
       })));
-    } else {
-      // Fallback: derive from role if no DB rows exist yet
+    } else if (profile?.is_active) {
+      // Legacy active profiles may predate workspace rows. Inactive invited
+      // profiles must never gain effective access from a role fallback.
       const fallback = deriveFromRole(profile?.role ?? 'admin');
       setWorkspaces(fallback);
+    } else {
+      setWorkspaces([]);
     }
     setLoading(false);
   }
