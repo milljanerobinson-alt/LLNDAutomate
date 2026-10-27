@@ -196,6 +196,54 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
     }
   });
 
+  test('Users separates deactivated staff and deletes an unreferenced invited user through the UI', async ({ page, runtimeEvidence: _runtime }) => {
+    await removeDisposableInvitationFixture();
+    const service = serviceClient();
+    try {
+      await authenticatePage(page, env.adminEmail, env.adminPassword);
+      await page.goto('/#/rto-admin/users');
+      await expect(page.getByRole('heading', { name: 'Active and invited staff' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Deactivated staff' })).toBeVisible();
+
+      await page.getByPlaceholder('Full name').fill('LLND E2E Delete');
+      await page.getByPlaceholder('Email address').fill(env.inviteEmail);
+      await page.getByRole('button', { name: 'Send invitation now' }).click();
+      await expect(page.getByText('Invitation email sent.')).toBeVisible();
+
+      const current = page.getByTestId('staff-section-current');
+      const deactivated = page.getByTestId('staff-section-deactivated');
+      const invitedRow = current.locator('[data-testid="organisation-staff-row"]', { hasText: env.inviteEmail });
+      await expect(invitedRow).toBeVisible();
+      await expect(deactivated.locator('[data-testid="organisation-staff-row"]', { hasText: env.inviteEmail })).toHaveCount(0);
+      await expect(deactivated.locator('[data-testid="organisation-staff-row"][data-staff-status="active"]')).toHaveCount(0);
+      await expect(current.locator('[data-testid="organisation-staff-row"][data-staff-status="inactive"]')).toHaveCount(0);
+
+      const { data: grant } = await service.from('staff_invitation_grants')
+        .select('user_id').eq('invited_email', env.inviteEmail).single();
+      const invitedUserId = grant!.user_id as string;
+
+      await invitedRow.getByTestId('staff-delete').click();
+      const dialog = page.getByTestId('staff-delete-dialog');
+      await expect(dialog.getByTestId('staff-delete-allowed')).toBeVisible();
+      await dialog.getByRole('button', { name: 'Delete permanently' }).click();
+      await expect(page.getByText('was permanently deleted.')).toBeVisible();
+      await expect(page.locator('[data-testid="organisation-staff-row"]', { hasText: env.inviteEmail })).toHaveCount(0);
+
+      const [{ data: authUser }, { count: memberships }, { count: grants }, { data: audit }] = await Promise.all([
+        service.auth.admin.getUserById(invitedUserId),
+        service.from('organisation_memberships').select('*', { count: 'exact', head: true }).eq('user_id', invitedUserId),
+        service.from('staff_invitation_grants').select('*', { count: 'exact', head: true }).eq('invited_email', env.inviteEmail),
+        service.from('staff_deletion_audit').select('prior_status,prior_workspaces').eq('deleted_user_id', invitedUserId),
+      ]);
+      expect(authUser?.user ?? null).toBeNull();
+      expect(memberships).toBe(0);
+      expect(grants).toBe(0);
+      expect(audit).toEqual([{ prior_status: 'invited', prior_workspaces: ['candidate_support'] }]);
+    } finally {
+      await removeDisposableInvitationFixture();
+    }
+  });
+
   test('real invitation action link uses the acceptance UI and activates the same membership once', async ({ page, runtimeEvidence: _runtime }) => {
     await removeDisposableInvitationFixture();
     const service = serviceClient();

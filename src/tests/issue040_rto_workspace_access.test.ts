@@ -19,6 +19,8 @@ const acceptInvite = read('pages/AcceptInvitePage.tsx');
 const supabaseClient = read('lib/supabase.ts');
 const authenticatedE2e = read('../tests/e2e/issue040.authenticated.spec.ts');
 const authenticatedHelper = read('../tests/e2e/helpers/authenticated-session.ts');
+const conditionalDeletion = read('../supabase/migrations/20261028120000_issue040_conditional_staff_deletion.sql');
+const usersPage = read('pages/workspace/UsersPage.tsx');
 
 describe('Issue #40 workspace access model', () => {
   it('defines exactly the three customer workspace identifiers', () => {
@@ -68,9 +70,10 @@ describe('Issue #40 Administration controls', () => {
     expect(migration).toContain('active_admins <= 1');
     expect(migration).toContain('final Administration user cannot be removed, demoted or deactivated');
   });
-  it('supports reversible activation without permanent deletion', () => {
+  it('supports reversible activation and never deletes staff directly from the browser', () => {
     expect(migration).toContain("new_status NOT IN ('active','inactive')");
-    expect(read('pages/workspace/UsersPage.tsx')).not.toMatch(/\.from\(['"]profiles['"]\)\.delete/);
+    expect(usersPage).not.toMatch(/\.from\(['"](profiles|organisation_memberships|user_workspace_access)['"]\)\.delete/);
+    expect(usersPage).not.toContain('auth.admin');
   });
   it('sends invitations through a server-side admin API', () => {
     expect(invite).toContain('auth.admin.inviteUserByEmail');
@@ -299,5 +302,76 @@ describe('Issue #40 Technical boundary', () => {
   it('does not grant Technical general candidate access in RLS', () => {
     const studentPolicy = migration.match(/CREATE POLICY students_workspace_select[\s\S]*?\n\);/)?.[0] ?? '';
     expect(studentPolicy).not.toContain("has_workspace_access('technical')");
+  });
+});
+
+describe('Issue #40 Product Owner refinement — Users list and conditional deletion', () => {
+  it('shows Active/Invited and Deactivated staff in separate sections', () => {
+    expect(usersPage).toContain("member.status !== 'inactive'");
+    expect(usersPage).toContain("member.status === 'inactive'");
+    expect(usersPage).toContain('Active and invited staff');
+    expect(usersPage).toContain('Deactivated staff');
+    expect(usersPage).toContain('inactive until they set up their account');
+    expect(usersPage).toContain(' · deactivated');
+    expect(usersPage).not.toContain('never permanently deleted');
+  });
+  it('offers deletion only for deactivated or invited staff and explains blockers first', () => {
+    expect(usersPage).toContain('(isDeactivated || isInvited) &&');
+    expect(usersPage).toContain("supabase.rpc('get_staff_deletion_blockers'");
+    expect(usersPage).toContain("supabase.rpc('delete_organisation_member'");
+    expect(usersPage.indexOf("rpc('get_staff_deletion_blockers'")).toBeLessThan(usersPage.indexOf("rpc('delete_organisation_member'"));
+    expect(usersPage).not.toMatch(/window\.confirm|\bconfirm\(/);
+  });
+  it('is a forward-only atomic migration that leaves earlier Issue #40 migrations untouched', () => {
+    expect(conditionalDeletion.trimStart().startsWith('/*')).toBe(true);
+    expect(conditionalDeletion).toContain('\nBEGIN;');
+    expect(conditionalDeletion.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(conditionalDeletion).toContain('take a Supabase backup/PITR recovery');
+    expect(conditionalDeletion).not.toMatch(/CREATE OR REPLACE FUNCTION public\.(update_organisation_member|link_staff_invitation|handle_new_user|activate_confirmed_staff_invitation)\b/);
+  });
+  it('restricts deletion to same-RTO Administration, never self, and only after deactivation', () => {
+    expect(conditionalDeletion).toContain("IF NOT public.has_workspace_access('administration') THEN");
+    expect(conditionalDeletion).toContain('target_user = auth.uid()');
+    expect(conditionalDeletion).toContain("cross-organisation member access denied");
+    expect(conditionalDeletion).toContain("target_membership.status NOT IN ('inactive','invited')");
+    expect(conditionalDeletion).toContain('PERFORM 1 FROM public.organisations o WHERE o.id = org_id FOR UPDATE');
+  });
+  it('preserves last-Administration protection', () => {
+    expect(conditionalDeletion).toContain('other_active_admins < 1');
+    expect(conditionalDeletion).toContain('final Administration user cannot be removed, demoted or deactivated');
+  });
+  it('blocks deletion while any foreign-key or actor column records the user', () => {
+    expect(conditionalDeletion).toContain("k.confrelid IN ('auth.users'::regclass, 'public.profiles'::regclass)");
+    expect(conditionalDeletion).toMatch(/\.\+_by\|/);
+    expect(conditionalDeletion).toContain("c.relname = 'objects' AND a.attname IN ('owner','owner_id')");
+    expect(conditionalDeletion).toContain('IF blocking_areas IS NOT NULL THEN');
+    expect(conditionalDeletion.indexOf('IF blocking_areas IS NOT NULL THEN'))
+      .toBeLessThan(conditionalDeletion.indexOf('DELETE FROM auth.users'));
+  });
+  it('excludes only the user\'s own identity rows from the provenance scan', () => {
+    const exclusions = conditionalDeletion.slice(conditionalDeletion.indexOf('NOT IN (VALUES'), conditionalDeletion.indexOf('ORDER BY u.sch'));
+    expect(exclusions.match(/\('public','[a-z_]+','[a-z_]+'\)/g)).toEqual([
+      "('public','profiles','id')",
+      "('public','organisation_memberships','user_id')",
+      "('public','user_workspace_access','user_id')",
+      "('public','staff_invitation_grants','user_id')",
+    ]);
+  });
+  it('records an organisation-scoped deletion audit that only Administration can read', () => {
+    expect(conditionalDeletion).toContain('CREATE TABLE IF NOT EXISTS public.staff_deletion_audit');
+    expect(conditionalDeletion).toContain('REVOKE ALL ON TABLE public.staff_deletion_audit FROM PUBLIC, anon, authenticated;');
+    expect(conditionalDeletion).toContain('GRANT SELECT ON TABLE public.staff_deletion_audit TO authenticated;');
+    expect(conditionalDeletion).toMatch(/USING \(organisation_id = public\.current_organisation_id\(\)\s+AND public\.has_workspace_access\('administration'\)\)/);
+    expect(conditionalDeletion.indexOf('INSERT INTO public.staff_deletion_audit'))
+      .toBeLessThan(conditionalDeletion.indexOf('DELETE FROM auth.users'));
+  });
+  it('keeps the provenance scanner private and exposes only customer-safe areas', () => {
+    expect(conditionalDeletion).toContain('REVOKE ALL ON FUNCTION public.staff_provenance_references(uuid) FROM PUBLIC, anon, authenticated, service_role;');
+    expect(conditionalDeletion).toContain('RETURNS TABLE (record_area text)');
+    expect(conditionalDeletion).toContain('REVOKE ALL ON FUNCTION public.delete_organisation_member(uuid) FROM PUBLIC, anon;');
+  });
+  it('exercises UI deletion in the authenticated staging gate', () => {
+    expect(authenticatedE2e).toContain('deletes an unreferenced invited user through the UI');
+    expect(authenticatedE2e).toContain("from('staff_deletion_audit')");
   });
 });

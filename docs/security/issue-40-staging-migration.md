@@ -21,5 +21,35 @@ occurs atomically after password setup. Apply it through the normal migration
 runner; its explicit transaction rolls back the function and trigger replacement
 together on failure. The previously applied migration files must not be edited.
 
+## Conditional staff deletion (Product Owner refinement, 12 August 2026)
+
+`20261028120000_issue040_conditional_staff_deletion.sql` is forward-only and must
+be applied after the four earlier Issue #40 migrations. It adds:
+
+- `staff_deletion_audit` — a record of every permanent staff deletion, readable
+  only by Administration users of the same RTO;
+- `get_staff_deletion_blockers(target_user)` — lists, in plain language, the
+  kinds of recorded history that stop a user from being deleted;
+- `delete_organisation_member(target_user)` — deletes a deactivated or invited
+  staff user only when nothing records them, keeping last-Administration
+  protection. It removes the Supabase Auth user in the same transaction.
+
+Before applying it to a shared environment:
+
+1. Create and verify a Supabase backup or point-in-time recovery point.
+2. Record row counts for `profiles`, `organisation_memberships`,
+   `user_workspace_access` and `staff_invitation_grants`.
+3. Apply it through the normal migration runner. Its explicit transaction rolls
+   back every object together on failure.
+
+After applying it, confirm in staging that:
+
+- deleting a deactivated user with an assigned support case or intervention note
+  is refused and leaves the user and the record unchanged;
+- deleting an unreferenced invited user removes the Auth user, membership and
+  invitation grant, and writes one `staff_deletion_audit` row. This also confirms
+  the database owner role is permitted to delete from `auth.users` on the hosted
+  project; if it is not, the whole deletion rolls back and the error is shown.
+
 Hosted Auth redirect, Resend SMTP and Invite User template steps are documented in
 `issue-40-auth-invitation-setup.md` and must be completed before Product Owner testing.
