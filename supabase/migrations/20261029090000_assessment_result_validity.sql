@@ -69,10 +69,13 @@ ALTER TABLE public.axcelerate_inbound_sync_log
   ADD COLUMN IF NOT EXISTS decision_at timestamptz,
   ADD COLUMN IF NOT EXISTS validated_at timestamptz,
   ADD COLUMN IF NOT EXISTS outcome_signature text,
+  ADD COLUMN IF NOT EXISTS validity_fingerprint text,
   ADD COLUMN IF NOT EXISTS validity_checks jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 -- Existing rows keep validated_at NULL on purpose: the sync re-checks them
--- once, judged at their original decision time (created_at).
+-- against current requirements before any earlier decision can stand.
+-- validity_fingerprint records the policy, course, mapping approval and
+-- requirements a decision depended on; a change forces a re-check.
 
 ALTER TABLE public.axcelerate_inbound_sync_log DROP CONSTRAINT IF EXISTS axcelerate_inbound_sync_log_status_check;
 ALTER TABLE public.axcelerate_inbound_sync_log ADD CONSTRAINT axcelerate_inbound_sync_log_status_check

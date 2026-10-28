@@ -292,8 +292,16 @@ async function processJob(
 
   if (!contactId) return { success: false, error: "Could not resolve aXcelerate contact ID" };
 
-  // Enroll in course for invitation/completion events
-  if (["invitation_sent", "quiz_sent", "assessment_completed"].includes(job.event_type)) {
+  // Enroll in course for invitation/completion events — but never for a
+  // learner the aXcelerate inbound sync found already enrolled (their
+  // invitation is linked to that enrolment, or the job says so). Enrolling
+  // them in "the first available" course instance would duplicate their
+  // enrolment and progress it without any validity check.
+  const alreadyEnrolledInAxcelerate = !!invitation.enrolment_id || job.extra_data?.skip_enrolment === true;
+  if (alreadyEnrolledInAxcelerate && ["invitation_sent", "quiz_sent", "assessment_completed"].includes(job.event_type)) {
+    await logCall("enrol", { skipped: true, reason: "learner already enrolled in aXcelerate (inbound sync)" }, null, "success");
+  }
+  if (!alreadyEnrolledInAxcelerate && ["invitation_sent", "quiz_sent", "assessment_completed"].includes(job.event_type)) {
     const courseId = invitation.qualification?.axcelerate_course_id;
     if (courseId) {
       try {
@@ -526,7 +534,7 @@ Deno.serve(async (req: Request) => {
           id, candidate_name, candidate_email, unique_token,
           sent_at, completed_at, due_date, course_recommendation,
           recommendation_reasons, trainer_override, trainer_override_reason,
-          axcelerate_contact_id, student_id,
+          axcelerate_contact_id, student_id, enrolment_id,
           qualification:qualifications(id, code, name, axcelerate_course_id)
         )
       `)
