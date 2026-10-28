@@ -115,6 +115,12 @@ SELECT json_build_object(
   'auth_users_triggers', (SELECT j FROM auth_triggers),
   'foreign_keys_to_users', (SELECT j FROM user_fks),
   'postgres_can_delete_auth_users', has_table_privilege('postgres', 'auth.users', 'DELETE'),
+  'legacy_role_policies', (SELECT json_agg(json_build_object('table', tablename, 'policy', policyname, 'cmd', cmd) ORDER BY tablename, policyname)
+      FROM pg_policies WHERE schemaname = 'public'
+        AND (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ '(get_my_role\(\)|\mp\.role\M|profiles\.role\M)'),
+  'profiles_with_legacy_admin_role', (SELECT count(*) FROM public.profiles p WHERE to_jsonb(p)->>'role' = 'admin'),
+  'mfa_verified_factor_users', CASE WHEN to_regclass('auth.mfa_factors') IS NOT NULL THEN
+      (xpath('/row/c/text()', query_to_xml($q$SELECT count(DISTINCT user_id) AS c FROM auth.mfa_factors WHERE status = 'verified'$q$, false, true, '')))[1]::text::bigint END,
   'candidate_table_columns', (SELECT json_object_agg(table_name, cols) FROM (
       SELECT table_name, json_agg(column_name ORDER BY ordinal_position) AS cols
       FROM information_schema.columns
