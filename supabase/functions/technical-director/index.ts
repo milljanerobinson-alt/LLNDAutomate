@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 import { generate, loadAIConfig } from "../_shared/ai-service.ts";
 
 const corsHeaders = {
@@ -25,7 +26,8 @@ async function verifyAdmin(req: Request) {
   if (error || !user) return null;
   const svc = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const { data: profile } = await svc.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
+  // Issue #45: operator status (grant + MFA) is enforced by requirePlatformOperator() in the request handler; the legacy profiles.role check is retired.
+  if (!profile) return null;
   return { svc, userId: user.id };
 }
 
@@ -669,6 +671,12 @@ ${context}`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+
+  // Issue #45: platform operators with MFA only (trusted server-to-server calls with the service-role key also pass).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: true });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
+  }
 
   try {
     const auth = await verifyAdmin(req);

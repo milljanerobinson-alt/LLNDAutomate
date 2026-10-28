@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { isIntegrationStaff } from "../_shared/organisation-access.ts";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,15 +13,12 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  // Issue #40 (interim, until platform operators are modelled): previously
-  // unauthenticated. Only Administration staff of the RTO that owns the current
-  // platform configuration may replace the platform Stripe credentials.
-  if (!(await isIntegrationStaff(req.headers.get("Authorization"), ["administration"]))) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  // Issue #45: platform operators with MFA only (no service-role bypass for platform credentials).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: false });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
   }
+
 
   try {
     const { stripe_secret_key, stripe_webhook_secret } = await req.json();

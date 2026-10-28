@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 import { generate, loadAIConfig, sanitizeMessages } from "../_shared/ai-service.ts";
 
 // EWO-032R.2 — Post-AI stage diagnostics
@@ -116,7 +117,8 @@ async function verifyAuth(req: Request) {
   );
   const { data: profile } = await svc
     .from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
+  // Issue #45: operator status (grant + MFA) is enforced by requirePlatformOperator() in the request handler; the legacy profiles.role check is retired.
+  if (!profile) return null;
   return { svc, userId: user.id, role: profile.role as string };
 }
 
@@ -1839,6 +1841,12 @@ interface Message { role: string; content: string; }
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
+  // Issue #45: platform operators with MFA only (trusted server-to-server calls with the service-role key also pass).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: true });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
+  }
+
   const requestId = `REQ-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   let activeConversationId: string | null = null;
   let svc: ReturnType<typeof createClient> | null = null;
@@ -1866,9 +1874,9 @@ Deno.serve(async (req: Request) => {
     // EWO-016R.Y.1 Req 3 — Debug Mode is permission-gated server-side.
     // The client-supplied debug_mode flag is honoured ONLY for authorised roles.
     // Authorised roles: admin (Platform Administrator), trainer (Product Owner / Engineering).
-    const DEBUG_AUTHORISED_ROLES = ["admin", "trainer"];
     const debugRequested = requestBody.debug_mode === true;
-    const debugModePermitted = debugRequested && DEBUG_AUTHORISED_ROLES.includes(actorRole);
+    // Issue #45: callers reaching this point are MFA-verified platform operators.
+    const debugModePermitted = debugRequested;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "messages array is required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });

@@ -61,10 +61,13 @@ describe('EIOS /eios entry never exposes LLND routes', () => {
     expect(fnBody).not.toMatch(/return\s+['"]trainer['"]/);
   });
 
-  it('resolveEiosWorkspace returns engineering for admin', () => {
+  // Issue #45 (Product Owner decision 28 Oct 2026): EIOS access comes from the
+  // platform-operator grant plus MFA, enforced by PlatformOperatorGate and the
+  // database. profiles.role = 'admin' no longer grants EIOS.
+  it('resolveEiosWorkspace returns engineering without consulting profiles.role', () => {
     const fnMatch = app.match(/function resolveEiosWorkspace[\s\S]*?^}/m);
     const fnBody = fnMatch![0];
-    expect(fnBody).toContain("profile?.role === 'admin'");
+    expect(fnBody).not.toContain("profile?.role === 'admin'");
     expect(fnBody).toContain("return 'engineering'");
   });
 

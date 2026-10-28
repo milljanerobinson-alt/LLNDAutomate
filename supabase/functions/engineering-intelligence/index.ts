@@ -19,6 +19,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 import { generate, createServiceClient } from "../_shared/ai-service.ts";
 import type { AIMessage } from "../_shared/ai-service.ts";
 
@@ -391,6 +392,12 @@ function validateResponse(
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  // Issue #45: platform operators with MFA only (trusted server-to-server calls with the service-role key also pass).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: true });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
   }
 
   const startMs = Date.now();
