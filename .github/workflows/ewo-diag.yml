@@ -25,7 +25,7 @@ jobs:
           git worktree add -q ../base 7f6e0b3
           errs() { DENO_NO_PACKAGE_JSON=1 deno check --node-modules-dir=none $1 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'TS[0-9]+ \[ERROR\]|error: ' | sed -E 's/^ +//' | sort -u; }
           : > deno.sum
-          for f in axcelerate-inbound-sync; do
+          for f in axcelerate-inbound-sync process-axcelerate-queue; do
             errs supabase/functions/$f/index.ts > h.txt
             if [ -f ../base/supabase/functions/$f/index.ts ]; then (cd ../base && errs supabase/functions/$f/index.ts) > b.txt; else : > b.txt; fi
             NEW=$(comm -13 b.txt h.txt | grep -v 'Type checking failed')
@@ -37,7 +37,7 @@ jobs:
           for t in assessment_result_validity issue040_rto_workspace_access; do
             npx vitest run src/tests/$t.test.ts > v.txt 2>&1; V=$?
             sed -i 's/\x1b\[[0-9;]*m//g' v.txt
-            { echo "$t exit=$V"; grep -E '^ *(Tests) |FAIL|AssertionError' v.txt | head -n 8; } >> tests.sum
+            { echo "$t exit=$V"; grep -E '^ *(Test Files|Tests|Duration) |FAIL|AssertionError|RUN +v' v.txt | head -n 10; } >> tests.sum
           done
           note CONTRACT_TESTS tests.sum
           npx vitest run > vitest.txt 2>&1; V=$?
@@ -48,5 +48,6 @@ jobs:
           (cd ../base && npm ci --silent >/dev/null 2>&1; npx tsc --noEmit -p tsconfig.app.json > ../tscb.txt 2>&1)
           { echo "head exit=$TC errors=$(grep -c 'error TS' tsc.txt) base errors=$(grep -c 'error TS' ../tscb.txt)"; grep -E 'src/(components/settings|pages/workspace/OrganisationPage|pages/AxcelerateInboundPage|tests/assessment_result_validity)' tsc.txt | head -20; } > tsc.sum
           note TYPECHECK tsc.sum
+          npx eslint . > lint.txt 2>&1; LR=$?; (cd ../base && npx eslint . > ../lintb.txt 2>&1; echo $? > ../lintb.rc); { echo "head exit=$LR problems=$(grep -cE '^ +[0-9]+:[0-9]+ ' lint.txt) base exit=$(cat ../lintb.rc) problems=$(grep -cE '^ +[0-9]+:[0-9]+ ' ../lintb.txt)"; head -c 600 lint.txt; } > lint.sum; note LINT lint.sum
           npx vite build > build.txt 2>&1; BR=$?; { echo "exit=$BR"; tail -4 build.txt; } > build.sum; note BUILD build.sum
                     true
