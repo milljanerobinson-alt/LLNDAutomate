@@ -2,8 +2,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 import {
   VALIDITY_SETTING_KEY, buildInboundNote, escapeLike, latestCompletedResult, matchStudent, outcomeSignature,
-  parseValidityPolicy, planAssessments, planForPreviousLog, shouldWriteNote,
-  type AssessmentType, type Decision, type QualificationRequirement, type StudentRow,
+  isOwnDecision, ownInvitations, parseValidityPolicy, planAssessments, planForPreviousLog, shouldWriteNote,
+  validityFingerprint,
+  type AssessmentType, type CourseContext, type Decision, type QualificationRequirement, type StudentRow,
 } from "../_shared/result-validity.ts";
 
 const corsHeaders = {
@@ -12,7 +13,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-Cron-Secret",
 };
 
-const DEFAULT_MIN_ACSF = 2;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -812,12 +812,16 @@ Deno.serve(async (req: Request) => {
     let qualificationId: string | null = null;
     let qualName = "N/A";
     let requirements: QualificationRequirement[] = [];
+    let mappingStatus: string | null = null;
+    let mappingReviewedAt: string | null = null;
 
     const lookupQual = async (query: any) => {
       const { data: qual } = await query;
       if (!qual) return;
       qualificationId = qual.id;
       qualName = `${qual.code} ${qual.name}`;
+      mappingStatus = qual.mapping_status ?? null;
+      mappingReviewedAt = qual.reviewed_at ?? null;
       const { data: reqs } = await supabase
         .from("qualification_lln_requirements")
         .select("domain, acsf_skill, minimum_acsf_level")
@@ -827,7 +831,7 @@ Deno.serve(async (req: Request) => {
 
     if (resolvedCourseId) {
       await lookupQual(
-        supabase.from("qualifications").select("id, code, name").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+        supabase.from("qualifications").select("id, code, name, mapping_status, reviewed_at").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .eq("axcelerate_course_id", resolvedCourseId).eq("active", true).maybeSingle()
       );
     }
@@ -835,7 +839,7 @@ Deno.serve(async (req: Request) => {
     // Fallback: look up by qualification code if still not found
     if (!qualificationId && contactQualCode) {
       await lookupQual(
-        supabase.from("qualifications").select("id, code, name").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+        supabase.from("qualifications").select("id, code, name, mapping_status, reviewed_at").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .ilike("code", contactQualCode).eq("active", true).maybeSingle()
       );
     }
@@ -888,8 +892,14 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     const now = new Date();
-    // Previously processed entries are re-checked unless they were validated
-    // under the result-validity rules (see planForPreviousLog).
+    // What a reuse decision depends on: the RTO's validity policy and the
+    // current enrolment's course, mapping approval and requirements.
+    const { data: validityRow } = await supabase
+      .from("organisation_settings").select("value")
+      .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("key", VALIDITY_SETTING_KEY).maybeSingle();
+    const validityPolicy = parseValidityPolicy(validityRow?.value);
+    const course: CourseContext = { qualificationId, mappingStatus, mappingReviewedAt, requirements };
+    const fingerprint = validityFingerprint(validityPolicy, course, llnRequired, digitalRequired);
     let previousLog = existingLog ?? null;
 
     if (existingLog && existingLog.status === "created") {
@@ -910,7 +920,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const plan = planForPreviousLog(previousLog, now);
+    // A previous entry stands only if it was validated, nothing it depends on
+    // has changed, and no result it relied on has since expired.
+    const plan = planForPreviousLog(previousLog, now, fingerprint);
     if (previousLog && !plan.recheck && ["created", "skipped"].includes(previousLog.status)) {
       // Validated earlier for this enrolment: keep the decision. Patch a
       // missing email and retry a failed note, as before.
@@ -972,10 +984,6 @@ Deno.serve(async (req: Request) => {
     });
 
     // ── 6. Decide each assessment ───────────────────────────────────────────
-    const { data: validityRow } = await supabase
-      .from("organisation_settings").select("value")
-      .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("key", VALIDITY_SETTING_KEY).maybeSingle();
-    const validityPolicy = parseValidityPolicy(validityRow?.value);
     let decisions: Decision[] = [];
     let studentId: string | null = null;
     let ambiguousReason: string | null = null;
@@ -997,12 +1005,10 @@ Deno.serve(async (req: Request) => {
         invitations,
         previousLog,
         policy: validityPolicy,
-        requirements,
+        course,
         digitalPassMarks,
-        qualificationIdentified: !!qualificationId,
-        defaultMinimumAcsf: DEFAULT_MIN_ACSF,
         now,
-      }).decisions;
+      });
     }
 
     const llnDecision = decisions.find((d) => d.type === "lln");
@@ -1110,7 +1116,10 @@ Deno.serve(async (req: Request) => {
           event_type: "invitation_sent",
           status: "pending",
           idempotency_key: `${invId}:invitation_sent`,
-          extra_data: {},
+          // The learner is already enrolled in aXcelerate (that's how this
+          // sync found them): the write-back must never create another
+          // enrolment in "the first available" course instance.
+          extra_data: { source: "axcelerate_inbound_sync", skip_enrolment: true },
         },
         { onConflict: "idempotency_key", ignoreDuplicates: true },
       );
@@ -1159,15 +1168,15 @@ Deno.serve(async (req: Request) => {
       ? (["lln", "digital"] as AssessmentType[])
           .filter((t) => (t === "lln" ? llnRequired : digitalRequired))
           .map((t) => ({ type: t, action: "review" as const, invitationId: null,
-            check: { status: "unverifiable" as const, reason: `${ambiguousReason}, so the student could not be identified reliably`, completedAt: null, validUntil: null, validityDays: null, sufficiencyDetail: null } }))
+            check: { status: "unverifiable" as const, reason: `${ambiguousReason}, so the learner could not be identified reliably`, completedAt: null, validUntil: null, validityDays: null, sufficiencyDetail: null, recheckBy: null } }))
       : decisions.map((d) => d.action === "sent"
           ? { ...d, invitationId: (d.type === "lln" ? llnInvitationId : digitalInvitationId) }
           : d);
+    const previousOwn = ownInvitations(previousLog);
     const signature = outcomeSignature(finalDecisions);
     const noteText = buildInboundNote({
       contactName: fullName,
-      qualName,
-      qualificationIdentified: !!qualificationId,
+      courseName: qualificationId ? qualName : null,
       decisions: finalDecisions,
       now,
       timezone: accountTimezone,
@@ -1235,12 +1244,15 @@ Deno.serve(async (req: Request) => {
         note_text: writeNote ? noteText : (previousLog?.note_text ?? noteText),
         note_written: noteWritten,
         outcome_signature: signature,
-        decision_at: plan.asOf.toISOString(),
+        decision_at: now.toISOString(),
         validated_at: needsReview ? null : now.toISOString(),
+        validity_fingerprint: fingerprint,
         validity_checks: finalDecisions.map((d) => ({
           type: d.type, action: d.action, invitation_id: d.invitationId,
+          own: isOwnDecision(d, previousOwn, newInvitationId),
           status: d.check?.status ?? null, reason: d.check?.reason ?? null,
           completed_at: d.check?.completedAt ?? null, valid_until: d.check?.validUntil ?? null,
+          recheck_by: d.check?.recheckBy ?? null,
           validity_days: d.check?.validityDays ?? null, requirements: d.check?.sufficiencyDetail ?? null,
         })),
         error: ambiguousReason,
