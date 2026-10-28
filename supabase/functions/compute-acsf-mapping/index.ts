@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { mappingApprovalState } from "../_shared/result-validity.ts";
 import { getIntegrationOrganisationId, getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
@@ -435,6 +436,47 @@ Deno.serve(async (req: Request) => {
       learning: "Learning", reading: "Reading", writing: "Writing",
       oral_communication: "Oral Communication", numeracy: "Numeracy", digital_literacy: "Digital Literacy",
     };
+
+    // RTO-approved ACSF levels are never replaced by generated values. When
+    // the current levels are approved, keep them and record the suggestion
+    // so staff can review it and approve any change themselves.
+    const [{ data: approvalRows }, { data: currentReqs }] = await Promise.all([
+      supa.from("qualification_mapping_approvals")
+        .select("id, decision, requirements_snapshot, decided_at")
+        .eq("organisation_id", auth.organisationId).eq("qualification_id", qualification_id)
+        .order("decided_at", { ascending: false }).limit(10),
+      supa.from("qualification_lln_requirements")
+        .select("domain, acsf_skill, minimum_acsf_level").eq("qualification_id", qualification_id),
+    ]);
+    const approvalState = mappingApprovalState({
+      approvals: approvalRows ?? [],
+      requirements: currentReqs ?? [],
+      changeDetectedAt: qual.mapping_change_detected_at ?? null,
+    });
+    if (approvalState.approved) {
+      await supa.from("qualification_mapping_logs").insert({
+        qualification_id,
+        triggered_by,
+        uoc_codes: rawUnits.map((u) => u.code),
+        uoc_sources: uocSources,
+        result_levels: levels,
+        confidence_score: confidence,
+        method: mappedMethod,
+        uoc_count: profiles.length,
+        uoc_matched: directCount,
+        needs_review: true,
+        review_reason: "Suggested levels recorded; the RTO-approved levels were kept",
+        notes: "Approved mapping preserved — suggestion only",
+      });
+      await supa.from("qualifications").update({
+        needs_review: true,
+        review_reason: "New suggested ACSF levels are available. Your approved levels were kept; review and approve any change.",
+      }).eq("organisation_id", auth.organisationId).eq("id", qualification_id);
+      return new Response(
+        JSON.stringify({ success: true, had_uoc_data: true, approved_mapping_preserved: true, qualification_id, suggested_levels: levels }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Upsert requirements
     await supa.from("qualification_lln_requirements").delete().eq("qualification_id", qualification_id);
