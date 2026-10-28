@@ -25,7 +25,7 @@ jobs:
           git worktree add -q ../base 7f6e0b3
           errs() { DENO_NO_PACKAGE_JSON=1 deno check --node-modules-dir=none $1 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'TS[0-9]+ \[ERROR\]|error: ' | sed -E 's/^ +//' | sort -u; }
           : > deno.sum
-          for f in axcelerate-inbound-sync process-axcelerate-queue; do
+          for f in axcelerate-inbound-sync process-axcelerate-queue compute-acsf-mapping; do
             errs supabase/functions/$f/index.ts > h.txt
             if [ -f ../base/supabase/functions/$f/index.ts ]; then (cd ../base && errs supabase/functions/$f/index.ts) > b.txt; else : > b.txt; fi
             NEW=$(comm -13 b.txt h.txt | grep -v 'Type checking failed')
