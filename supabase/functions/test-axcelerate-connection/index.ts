@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +54,11 @@ Deno.serve(async (req: Request) => {
 
     if (profileError) return unauthorized(`profile lookup failed — ${profileError.message}`);
     if (!profile) return unauthorized(`no profile found for user ${user.id}`);
-    if (profile.role !== "admin") return unauthorized(`role is '${profile.role}', admin required`);
+    // Issue #40: workspace permission in the RTO that owns the integration,
+    // not the legacy profile role.
+    if (!(await isIntegrationStaff(authHeader, ["administration", "technical"], serviceClient))) {
+      return unauthorized("Administration or Technical access in the RTO that owns this aXcelerate integration is required");
+    }
 
     const { api_base_url } = await req.json();
 

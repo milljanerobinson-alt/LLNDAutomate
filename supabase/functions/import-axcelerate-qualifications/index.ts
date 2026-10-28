@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getIntegrationOrganisationId, getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,27 +8,14 @@ const corsHeaders = {
 };
 
 async function verifyAuth(req: Request) {
+  // Issue #40: Administration staff of the RTO that owns the platform
+  // aXcelerate credentials only. Qualifications are written to that RTO.
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) return null;
-
-  const token = authHeader.replace("Bearer ", "");
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } }
-  );
-
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
-  return { user, role: profile.role };
+  const context = await getStaffContext(authHeader);
+  if (!hasAnyWorkspace(context, ["administration"])) return null;
+  const integrationOrganisationId = await getIntegrationOrganisationId();
+  if (!integrationOrganisationId || context!.organisationId !== integrationOrganisationId) return null;
+  return context;
 }
 
 function pick(obj: Record<string, unknown>, ...keys: string[]): unknown {
@@ -233,7 +221,8 @@ Deno.serve(async (req: Request) => {
       // Fetch existing qualifications keyed by axcelerate_course_id
       const { data: existing } = await supabase
         .from("qualifications")
-        .select("id, axcelerate_course_id, code, name");
+        .select("id, axcelerate_course_id, code, name")
+        .eq("organisation_id", auth.organisationId);
 
       const byAxcId = new Map<number, { code: string; name: string }>();
       for (const q of (existing ?? [])) {
@@ -312,7 +301,8 @@ Deno.serve(async (req: Request) => {
 
     const { data: existing } = await supabase
       .from("qualifications")
-      .select("id, axcelerate_course_id, code, name, mapping_source");
+      .select("id, axcelerate_course_id, code, name, mapping_source")
+      .eq("organisation_id", auth.organisationId);
 
     const byAxcId = new Map<number, { id: string; code: string; name: string; mapping_source: string | null }>();
     for (const q of (existing ?? [])) {
@@ -401,7 +391,7 @@ Deno.serve(async (req: Request) => {
         // New qualification — insert
         const { data: inserted } = await supabase
           .from("qualifications")
-          .insert({ code, name, axcelerate_course_id: courseId, active: true })
+          .insert({ code, name, axcelerate_course_id: courseId, active: true, organisation_id: auth.organisationId })
           .select("id")
           .single();
 

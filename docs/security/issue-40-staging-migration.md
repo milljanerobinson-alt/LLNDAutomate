@@ -51,5 +51,59 @@ After applying it, confirm in staging that:
   the database owner role is permitted to delete from `auth.users` on the hosted
   project; if it is not, the whole deletion rolls back and the error is shown.
 
+## Organisation-scoped Administration and Technical data (refinement, scope confirmed 28 October 2026)
+
+`20261028130000_issue040_organisation_data_scoping.sql` is forward-only and must
+be applied after `20261028120000_issue040_conditional_staff_deletion.sql`. It:
+
+- gives qualifications, subscriptions and billing events an owning organisation,
+  and scopes LLN requirements, ACSF mapping evidence, mapping logs, billing usage
+  and billable learners through them;
+- moves RTO configuration (branding, email/reminder/notification settings, RTO
+  number/state, aXcelerate watch list and auto-sync) into `organisation_settings`;
+- makes the platform `settings` table server-only, except the non-secret
+  `environment` key;
+- bills each completed assessment to the candidate's own RTO subscription.
+
+Legacy rows (created before organisations existed) are assigned to one legacy
+organisation. If exactly one organisation exists it is used automatically. If
+several exist, the migration stops with a message, changes nothing, and must be
+re-run after choosing the owner, in the same SQL Editor run:
+
+```sql
+SELECT set_config('llnd.legacy_organisation_id', '<organisation uuid>', false);
+-- then the full migration file
+```
+
+Before applying it to a shared environment:
+
+1. Run `supabase/inspection/issue040_staging_inspection.sql` and keep the result.
+2. Create and verify a Supabase backup or point-in-time recovery point.
+3. Record row counts for `qualifications`, `qualification_lln_requirements`,
+   `qualification_mapping_evidence`, `settings`, `subscriptions`, `billing_usage`,
+   `billable_learners` and `billing_events`.
+
+After applying it, confirm that the same row counts are unchanged, that every
+`qualifications` and `subscriptions` row has an `organisation_id`, and that
+`organisation_settings` holds the RTO configuration keys that were in `settings`.
+
+Deploy these Edge Functions after the migration (they read the new columns and
+`legacy_server_settings_organisation_id`): `_shared/organisation-access.ts` with
+`axcelerate-bulk-sync`, `axcelerate-inbound-sync`, `axcelerate-sync`,
+`compute-acsf-mapping`, `import-axcelerate-qualifications`,
+`process-axcelerate-queue`, `save-axcelerate-secrets`, `save-stripe-key`,
+`stripe-checkout`, `stripe-portal`, `stripe-webhook`,
+`test-axcelerate-connection` and `upload-axcelerate-portfolio`.
+
+`stripe-webhook` now refuses events unless `STRIPE_WEBHOOK_SECRET` is configured
+and Stripe's signature is valid.
+
+## Recovery
+
+All three newer Issue #40 migrations run in a single transaction: if any step
+fails, nothing is changed. After a successful apply, do not hand-edit tables or
+policies to undo it. If validation fails, stop testing and restore the verified
+recovery point taken beforehand, then report the inspection result and the error.
+
 Hosted Auth redirect, Resend SMTP and Invite User template steps are documented in
 `issue-40-auth-invitation-setup.md` and must be completed before Product Owner testing.

@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getIntegrationOrganisationId, getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -199,17 +200,9 @@ function rollup(profiles: UocProfile[]): {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 async function verifyAuth(req: Request) {
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) return null;
-  const token = auth.replace("Bearer ", "");
-  const supa  = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-    global: { headers: { Authorization: auth } },
-  });
-  const { data: { user }, error } = await supa.auth.getUser(token);
-  if (error || !user) return null;
-  const { data: profile } = await supa.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
-  return { user, role: profile.role };
+  // Issue #40: Administration staff of an active RTO membership only.
+  const context = await getStaffContext(req.headers.get("Authorization"));
+  return hasAnyWorkspace(context, ["administration"]) ? context : null;
 }
 
 // ── aXcelerate UoC fetch ──────────────────────────────────────────────────────
@@ -300,6 +293,7 @@ Deno.serve(async (req: Request) => {
       .from("qualifications")
       .select("*")
       .eq("id", qualification_id)
+      .eq("organisation_id", auth.organisationId)
       .maybeSingle();
 
     if (qualErr || !qual) {
@@ -320,11 +314,15 @@ Deno.serve(async (req: Request) => {
     }>();
     for (const row of (library ?? [])) libraryMap.set(row.uoc_code.toUpperCase(), row);
 
-    // Try to get aXcelerate credentials for UoC fetch
+    // Try to get aXcelerate credentials for UoC fetch. Issue #40: the platform
+    // credentials belong to one RTO, so only that RTO's qualifications use them.
+    const integrationOrganisationId = await getIntegrationOrganisationId(supa);
+    const useIntegration = integrationOrganisationId === auth.organisationId;
+    const noRow = Promise.resolve({ data: null });
     const [{ data: settingsRow }, { data: apiTokRow }, { data: wsTokRow }] = await Promise.all([
-      supa.from("settings").select("value").eq("key", "axcelerate_config").maybeSingle(),
-      supa.from("settings").select("value").eq("key", "axcelerate_api_token").maybeSingle(),
-      supa.from("settings").select("value").eq("key", "axcelerate_ws_token").maybeSingle(),
+      useIntegration ? supa.from("settings").select("value").eq("key", "axcelerate_config").maybeSingle() : noRow,
+      useIntegration ? supa.from("settings").select("value").eq("key", "axcelerate_api_token").maybeSingle() : noRow,
+      useIntegration ? supa.from("settings").select("value").eq("key", "axcelerate_ws_token").maybeSingle() : noRow,
     ]);
 
     const apiBaseUrl: string | null = settingsRow?.value?.api_base_url ?? null;

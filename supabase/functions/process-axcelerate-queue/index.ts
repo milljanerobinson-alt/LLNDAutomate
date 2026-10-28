@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -436,8 +437,8 @@ Deno.serve(async (req: Request) => {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const { data: p } = await anonClient.from("profiles").select("role").eq("id", user.id).maybeSingle();
-      if (!p || !["admin", "trainer"].includes(p.role)) {
+      // Issue #40: Administration/Technical staff of the integration RTO only.
+      if (!(await isIntegrationStaff(authHeader, ["administration", "technical"]))) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -473,11 +474,22 @@ Deno.serve(async (req: Request) => {
 
     const axConfig = { apiBaseUrl, apiToken, wsToken, portalBaseUrl };
 
+    // Issue #40: the platform credentials belong to one RTO. Never process
+    // another RTO's candidates with them.
+    const integrationOrganisationId = await getIntegrationOrganisationId(supabase);
+    if (!integrationOrganisationId) {
+      return new Response(
+        JSON.stringify({ error: "aXcelerate integration owner is not recorded", processed: 0 }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Auto-detect completed invitations missing an assessment_completed write-back job
     if (!specificJobId && !filterInvitationId) {
       const { data: completedInvs } = await supabase
         .from("assessment_invitations")
         .select("id")
+        .eq("organisation_id", integrationOrganisationId)
         .eq("status", "completed")
         .not("completed_at", "is", null);
 
@@ -501,6 +513,7 @@ Deno.serve(async (req: Request) => {
     await supabase
       .from("axcelerate_writeback_queue")
       .update({ status: "pending" })
+      .eq("organisation_id", integrationOrganisationId)
       .eq("status", "processing")
       .lt("last_attempted_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
 
@@ -517,6 +530,7 @@ Deno.serve(async (req: Request) => {
           qualification:qualifications(id, code, name, axcelerate_course_id)
         )
       `)
+      .eq("organisation_id", integrationOrganisationId)
       .in("status", ["pending", "failed"])
       .lt("attempts", MAX_ATTEMPTS)
       .or("next_attempt_at.is.null,next_attempt_at.lte." + new Date().toISOString())

@@ -27,20 +27,22 @@ Deno.serve(async (req: Request) => {
     .eq("key", "STRIPE_WEBHOOK_SECRET")
     .maybeSingle();
 
-  const webhookSecret = webhookSecretRow?.value;
+  const webhookSecret = typeof webhookSecretRow?.value === "string" ? webhookSecretRow.value : "";
 
-  if (webhookSecret && sig) {
-    // Simple timestamp-based verification (full HMAC requires crypto)
-    const parts = sig.split(",");
-    const tPart = parts.find((p) => p.startsWith("t="));
-    const timestamp = tPart ? parseInt(tPart.slice(2), 10) : 0;
-    const ageSeconds = Math.abs(Date.now() / 1000 - timestamp);
-    if (ageSeconds > 300) {
-      return new Response(JSON.stringify({ error: "Webhook timestamp too old" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+  // Issue #40 billing integrity: verify Stripe's HMAC-SHA256 signature. Events
+  // are refused when no webhook secret is configured, because an unverified
+  // event could change another RTO's subscription.
+  if (!webhookSecret) {
+    return new Response(JSON.stringify({ error: "Stripe webhook secret is not configured" }), {
+      status: 503,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!sig || !(await verifyStripeSignature(body, sig, webhookSecret))) {
+    return new Response(JSON.stringify({ error: "Invalid Stripe signature" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   let event: Record<string, unknown>;
@@ -73,7 +75,9 @@ Deno.serve(async (req: Request) => {
   }
 
   // Log the event
+  const organisationId = await resolveEventOrganisation(supabase, obj);
   await supabase.from("billing_events").insert({
+    organisation_id: organisationId,
     stripe_event_id: stripeEventId,
     event_type: eventType,
     amount_cents: obj?.amount_paid as number ?? obj?.amount_due as number ?? null,
@@ -89,7 +93,7 @@ Deno.serve(async (req: Request) => {
   try {
     switch (eventType) {
       case "checkout.session.completed":
-        await handleCheckoutComplete(supabase, obj);
+        await handleCheckoutComplete(supabase, obj, organisationId);
         break;
       case "customer.subscription.updated":
         await handleSubscriptionUpdated(supabase, obj);
@@ -136,7 +140,10 @@ function describeEvent(type: string, obj: Record<string, unknown>): string {
 async function handleCheckoutComplete(
   supabase: ReturnType<typeof createClient>,
   obj: Record<string, unknown>,
+  organisationId: string | null,
 ) {
+  // Issue #40: a checkout must be attributable to exactly one RTO.
+  if (!organisationId) throw new Error("Checkout session is not linked to an organisation");
   const customerId = obj.customer as string;
   const subscriptionId = obj.subscription as string;
   const metadata = obj.metadata as Record<string, string> ?? {};
@@ -175,11 +182,13 @@ async function handleCheckoutComplete(
   const { data: existingSub } = await supabase
     .from("subscriptions")
     .select("id")
+    .eq("organisation_id", organisationId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   const updates = {
+    organisation_id: organisationId,
     plan_id: metadata.plan_id ?? null,
     status: stripeSub.status,
     stripe_customer_id: customerId,
@@ -271,4 +280,50 @@ async function handlePaymentFailed(
 async function getStripeKey(supabase: ReturnType<typeof createClient>): Promise<string | null> {
   const { data } = await supabase.from("settings").select("value").eq("key", "STRIPE_SECRET_KEY").maybeSingle();
   return data?.value ?? null;
+}
+
+// Issue #40: which RTO an event belongs to — checkout/subscription metadata
+// first (validated), otherwise the subscription already linked to the Stripe
+// customer. Returns null when the event cannot be attributed.
+async function resolveEventOrganisation(
+  supabase: ReturnType<typeof createClient>,
+  obj: Record<string, unknown> | undefined,
+): Promise<string | null> {
+  if (!obj) return null;
+  const metadata = (obj.metadata ?? {}) as Record<string, string>;
+  const fromMetadata = typeof metadata.organisation_id === "string" ? metadata.organisation_id : null;
+  if (fromMetadata) {
+    const { data: org } = await supabase.from("organisations").select("id").eq("id", fromMetadata).maybeSingle();
+    if (org?.id) return org.id as string;
+  }
+  const customerId = typeof obj.customer === "string" ? obj.customer : null;
+  if (customerId) {
+    const { data: sub } = await supabase
+      .from("subscriptions").select("organisation_id").eq("stripe_customer_id", customerId).maybeSingle();
+    if (sub?.organisation_id) return sub.organisation_id as string;
+  }
+  return null;
+}
+
+// Stripe signature header: "t=<timestamp>,v1=<hex hmac>[,v1=...]". The signed
+// payload is "<timestamp>.<raw body>" with the endpoint's webhook secret.
+async function verifyStripeSignature(body: string, header: string, secret: string): Promise<boolean> {
+  const parts = header.split(",").map((part) => part.trim());
+  const timestamp = parts.find((part) => part.startsWith("t="))?.slice(2) ?? "";
+  const signatures = parts.filter((part) => part.startsWith("v1=")).map((part) => part.slice(3));
+  if (!timestamp || signatures.length === 0) return false;
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${body}`)));
+  const expected = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return signatures.some((candidate) => timingSafeEqual(candidate, expected));
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i += 1) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return difference === 0;
 }

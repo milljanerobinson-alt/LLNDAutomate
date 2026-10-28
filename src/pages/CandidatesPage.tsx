@@ -411,7 +411,7 @@ export function CandidatesPage() {
         .order('created_at', { ascending: false }),
       supabase.from('qualifications').select('*').eq('active', true).order('name'),
       supabase.from('assessments').select('*').eq('status', 'active').order('title'),
-      supabase.from('settings').select('key, value').eq('key', 'org_branding').maybeSingle(),
+      supabase.from('organisation_settings').select('key, value').eq('key', 'org_branding').maybeSingle(),
     ]);
 
     if (invRes.error) {
@@ -500,7 +500,7 @@ export function CandidatesPage() {
     portalUrl: string, dueDate: string | null,
   ) {
     try {
-      const { data: settingsRow } = await supabase.from('settings').select('value').eq('key', 'email_settings').maybeSingle();
+      const { data: settingsRow } = await supabase.from('organisation_settings').select('value').eq('key', 'email_settings').maybeSingle();
       const emailSettings = (settingsRow?.value as Record<string, unknown>) ?? {};
       const now = Date.now();
       const r1Hours = typeof emailSettings.reminder_1_hours === 'number' ? emailSettings.reminder_1_hours : 48;

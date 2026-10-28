@@ -63,13 +63,15 @@ export function SignUpPage() {
       if (signUpError) throw signUpError;
       if (!data.user) throw new Error('Failed to create account');
 
-      // 2. Wait briefly for profile trigger then save settings
+      // 2. Wait briefly for the new-RTO trigger, then save this RTO's own
+      // details (organisation-scoped; never the platform-wide settings table).
       await new Promise((r) => setTimeout(r, 800));
-      await supabase.from('settings').upsert([
-        { key: 'org_name', value: orgName },
-        { key: 'org_rto_number', value: rtoNumber },
-        { key: 'org_state', value: state },
-      ], { onConflict: 'key' });
+      const { data: organisation } = await supabase.from('organisations').select('id').maybeSingle();
+      if (organisation?.id && orgName.trim()) {
+        await supabase.from('organisations').update({ name: orgName.trim() }).eq('id', organisation.id);
+      }
+      await supabase.rpc('set_organisation_setting', { p_key: 'org_rto_number', p_value: rtoNumber });
+      await supabase.rpc('set_organisation_setting', { p_key: 'org_state', p_value: state });
 
       // 3. Create trial subscription (best-effort; may fail if profile not ready)
       const trialEnd = new Date(Date.now() + 14 * 86_400_000).toISOString();

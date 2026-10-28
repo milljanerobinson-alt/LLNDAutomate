@@ -190,7 +190,7 @@ export function CompliancePage() {
           .eq('invitation_id', inv.id)
           .order('created_at', { ascending: true }),
         supabase
-          .from('settings')
+          .from('organisation_settings')
           .select('value')
           .eq('key', 'org_branding')
           .maybeSingle(),

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,6 +22,14 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Issue #40: only Administration staff may open billing for their own RTO.
+  const staff = await getStaffContext(req.headers.get("Authorization"), supabase);
+  if (!hasAnyWorkspace(staff, ["administration"])) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const { plan_id, success_url, cancel_url } = await req.json();
@@ -51,6 +60,7 @@ Deno.serve(async (req: Request) => {
     const { data: sub } = await supabase
       .from("subscriptions")
       .select("stripe_customer_id")
+      .eq("organisation_id", staff!.organisationId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -65,6 +75,8 @@ Deno.serve(async (req: Request) => {
       "line_items[0][price_data][unit_amount]": String(plan.platform_fee_cents),
       "line_items[0][quantity]": "1",
       "metadata[plan_id]": plan_id,
+      "metadata[organisation_id]": staff!.organisationId,
+      "subscription_data[metadata][organisation_id]": staff!.organisationId,
       "allow_promotion_codes": "true",
     });
 

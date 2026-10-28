@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,8 +30,9 @@ async function verifyAuth(req: Request, supabase: any): Promise<boolean> {
   );
   const { data: { user }, error } = await anonClient.auth.getUser();
   if (error || !user) return false;
-  const { data: p } = await anonClient.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  return !!(p && ["admin", "trainer"].includes(p.role));
+  // Issue #40: only Administration/Technical staff of the RTO that owns the
+  // platform aXcelerate credentials may trigger this integration.
+  return await isIntegrationStaff(authHeader, ["administration", "technical"], supabase);
 }
 
 // ── aXcelerate helpers ────────────────────────────────────────────────────────

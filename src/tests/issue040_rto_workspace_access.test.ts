@@ -21,6 +21,9 @@ const authenticatedE2e = read('../tests/e2e/issue040.authenticated.spec.ts');
 const authenticatedHelper = read('../tests/e2e/helpers/authenticated-session.ts');
 const conditionalDeletion = read('../supabase/migrations/20261028120000_issue040_conditional_staff_deletion.sql');
 const usersPage = read('pages/workspace/UsersPage.tsx');
+const dataScoping = read('../supabase/migrations/20261028130000_issue040_organisation_data_scoping.sql');
+const fn = (name: string) => read(`../supabase/functions/${name}/index.ts`);
+const organisationAccess = read('../supabase/functions/_shared/organisation-access.ts');
 
 describe('Issue #40 workspace access model', () => {
   it('defines exactly the three customer workspace identifiers', () => {
@@ -373,5 +376,101 @@ describe('Issue #40 Product Owner refinement — Users list and conditional dele
   it('exercises UI deletion in the authenticated staging gate', () => {
     expect(authenticatedE2e).toContain('deletes an unreferenced invited user through the UI');
     expect(authenticatedE2e).toContain("from('staff_deletion_audit')");
+  });
+});
+
+describe('Issue #40 Product Owner refinement — organisation-scoped Administration and Technical data', () => {
+  it('requires the base Issue #40 migration and never guesses legacy ownership', () => {
+    expect(dataScoping.trimStart().startsWith('/*')).toBe(true);
+    expect(dataScoping).toContain('\nBEGIN;');
+    expect(dataScoping.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(dataScoping).toContain('the base Issue #40 migration (20260809092000) is not installed');
+    expect(dataScoping).toContain("current_setting('llnd.legacy_organisation_id', true)");
+    expect(dataScoping).toContain('IF org_count = 1 THEN');
+    expect(dataScoping).toContain('take a Supabase backup/PITR recovery');
+  });
+  it('replaces every existing policy on the in-scope tables but leaves the public plan catalogue alone', () => {
+    const dropList = dataScoping.slice(dataScoping.indexOf("WHERE schemaname = 'public' AND tablename IN ("), dataScoping.indexOf('EXECUTE format(\'DROP POLICY'));
+    for (const table of ['qualifications', 'qualification_lln_requirements', 'qualification_mapping_evidence', 'settings', 'subscriptions', 'billing_usage', 'billable_learners', 'billing_events']) {
+      expect(dropList).toContain(`'${table}'`);
+    }
+    expect(dropList).not.toContain('subscription_plans');
+  });
+  it('makes qualifications organisation-owned: staff read, Administration writes', () => {
+    expect(dataScoping).toContain('ALTER TABLE public.qualifications ALTER COLUMN organisation_id SET NOT NULL;');
+    expect(dataScoping).toContain('CREATE TRIGGER issue040_qualification_org BEFORE INSERT OR UPDATE ON public.qualifications');
+    expect(dataScoping).toMatch(/qualifications_org_select ON public\.qualifications FOR SELECT TO authenticated\s+USING \(organisation_id = public\.current_organisation_id\(\) AND public\.is_active_organisation_staff\(\)\)/);
+    expect(dataScoping).toMatch(/qualifications_org_admin_update[\s\S]*?has_workspace_access\('administration'\)/);
+    expect(dataScoping).toContain("FOREACH tbl IN ARRAY ARRAY['qualification_lln_requirements','qualification_mapping_evidence']");
+    expect(dataScoping).toContain("FOREACH tbl IN ARRAY ARRAY['mapping_unit_evidence','mapping_evidence_attachments','mapping_evidence_reviews']");
+  });
+  it('never lets an end user write into another organisation or move ownership', () => {
+    expect(dataScoping).toContain("RAISE EXCEPTION 'cross-organisation write denied'");
+    expect(dataScoping).toContain("RAISE EXCEPTION 'organisation ownership cannot be changed'");
+    expect(dataScoping).toContain("RAISE EXCEPTION 'organisation ownership must be supplied by the server'");
+  });
+  it('locks platform settings to the server except the non-secret environment key', () => {
+    expect(dataScoping).toContain('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.settings FROM anon, authenticated;');
+    expect(dataScoping).toMatch(/settings_public_environment_select ON public\.settings FOR SELECT TO authenticated\s+USING \(key = 'environment'\)/);
+  });
+  it('stores RTO configuration per organisation through an allow-listed, permission-checked function', () => {
+    expect(dataScoping).toContain('PRIMARY KEY (organisation_id, key)');
+    expect(dataScoping).toContain('CHECK (public.organisation_setting_category(key) IS NOT NULL)');
+    expect(dataScoping).toContain('REVOKE ALL ON TABLE public.organisation_settings FROM PUBLIC, anon, authenticated;');
+    expect(dataScoping).toContain("OR (category = 'technical' AND public.has_workspace_access('technical'))");
+    expect(dataScoping).not.toMatch(/organisation_setting_category[\s\S]{0,600}(token|secret|password|api_key)/i);
+  });
+  it('mirrors only the legacy RTO into the server copy as a documented temporary bridge', () => {
+    expect(dataScoping).toContain('legacy_server_settings_organisation_id');
+    expect(dataScoping).toContain('ELSIF NEW.organisation_id = legacy_org THEN');
+  });
+  it('scopes subscriptions, usage, billable learners and billing events to Administration of the owning RTO', () => {
+    expect(dataScoping).toContain('ALTER TABLE public.subscriptions ALTER COLUMN organisation_id SET NOT NULL;');
+    expect(dataScoping).toContain('CREATE POLICY billing_usage_org_admin_select');
+    expect(dataScoping).toContain('CREATE POLICY billable_learners_org_admin_select');
+    expect(dataScoping).toContain('CREATE POLICY billing_events_org_admin_select');
+  });
+  it('bills a completion to the candidate\'s own organisation, not the newest subscription', () => {
+    const fnBody = dataScoping.slice(dataScoping.indexOf('CREATE OR REPLACE FUNCTION public.record_billable_completion'));
+    expect(fnBody).toContain('SELECT ai.organisation_id INTO v_org_id FROM assessment_invitations ai WHERE ai.id = p_invitation_id;');
+    expect(fnBody).toContain("WHERE organisation_id = v_org_id AND status IN ('trialing', 'active', 'past_due')");
+  });
+  it('moves RTO pages off the platform settings table', () => {
+    for (const page of ['CandidatesPage', 'CompliancePage', 'AxcelerateInboundPage', 'SignUpPage']) {
+      expect(read(`pages/${page}.tsx`)).not.toMatch(/from\(['"]settings['"]\)/);
+    }
+    expect(read('pages/AxcelerateInboundPage.tsx')).toContain("supabase.rpc('set_organisation_setting'");
+  });
+  it('decides Edge Function staff access by membership and workspace, not the legacy role', () => {
+    expect(organisationAccess).toContain('.from("organisation_memberships")');
+    expect(organisationAccess).toContain('.eq("status", "active")');
+    expect(organisationAccess).not.toMatch(/profiles"\)\.select\("role"/);
+    for (const name of ['axcelerate-bulk-sync', 'axcelerate-inbound-sync', 'axcelerate-sync', 'import-axcelerate-qualifications', 'compute-acsf-mapping', 'process-axcelerate-queue', 'upload-axcelerate-portfolio']) {
+      expect(fn(name)).not.toMatch(/\["admin", "trainer"\]\.includes/);
+      expect(fn(name)).toContain('../_shared/organisation-access.ts');
+    }
+  });
+  it('keeps the shared aXcelerate credentials inside the RTO that owns them', () => {
+    expect(fn('process-axcelerate-queue').match(/\.eq\("organisation_id", integrationOrganisationId\)/g)).toHaveLength(3);
+    expect(fn('axcelerate-sync')).toContain('invitation.organisation_id !== integrationOrganisationId');
+    expect(fn('upload-axcelerate-portfolio')).toContain('invitation.organisation_id !== integrationOrganisationId');
+    expect(fn('import-axcelerate-qualifications')).toContain('organisation_id: auth.organisationId');
+    expect(fn('compute-acsf-mapping')).toContain('.eq("organisation_id", auth.organisationId)');
+    expect(fn('save-axcelerate-secrets')).toContain('integrationOrganisationId !== staff!.organisationId');
+  });
+  it('requires Administration of the caller\'s own RTO for Stripe checkout and portal', () => {
+    for (const name of ['stripe-checkout', 'stripe-portal']) {
+      expect(fn(name)).toContain('hasAnyWorkspace(staff, ["administration"])');
+      expect(fn(name)).toContain('.eq("organisation_id", staff!.organisationId)');
+    }
+    expect(fn('stripe-checkout')).toContain('"metadata[organisation_id]": staff!.organisationId');
+  });
+  it('verifies Stripe webhook signatures and never updates the newest subscription on the platform', () => {
+    const webhook = fn('stripe-webhook');
+    expect(webhook).toContain('crypto.subtle.importKey');
+    expect(webhook).toContain('Stripe webhook secret is not configured');
+    expect(webhook).toContain('resolveEventOrganisation(supabase, obj)');
+    expect(webhook).toContain('.eq("organisation_id", organisationId)');
+    expect(fn('save-stripe-key')).toContain('isIntegrationStaff(req.headers.get("Authorization"), ["administration"])');
   });
 });

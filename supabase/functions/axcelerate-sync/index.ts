@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,9 +27,8 @@ async function verifyAuth(req: Request): Promise<{ userId: string } | null> {
   );
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) return null;
-  const { data: profile } = await supabase
-    .from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
+  // Issue #40: Administration/Technical staff of the integration RTO only.
+  if (!(await isIntegrationStaff(authHeader, ["administration", "technical"]))) return null;
   return { userId: user.id };
 }
 
@@ -414,6 +414,15 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "Invitation not found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Issue #40: the platform aXcelerate credentials belong to one RTO. Refuse
+    // to write another RTO's candidate into that RTO's aXcelerate account.
+    const integrationOrganisationId = await getIntegrationOrganisationId(supabase);
+    if (!integrationOrganisationId || invitation.organisation_id !== integrationOrganisationId) {
+      return new Response(JSON.stringify({ error: "aXcelerate integration is not configured for this candidate's organisation" }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 

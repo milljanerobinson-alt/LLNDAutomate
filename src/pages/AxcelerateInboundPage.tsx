@@ -93,7 +93,7 @@ export function AxcelerateInboundPage() {
   async function loadWatchList() {
     setWatchListLoading(true);
     const { data } = await supabase
-      .from('settings')
+      .from('organisation_settings')
       .select('value')
       .eq('key', 'axcelerate_contact_watch_list')
       .maybeSingle();
@@ -103,9 +103,8 @@ export function AxcelerateInboundPage() {
   }
 
   async function saveWatchList(ids: number[]) {
-    await supabase
-      .from('settings')
-      .upsert({ key: 'axcelerate_contact_watch_list', value: ids }, { onConflict: 'key' });
+    const { error } = await supabase.rpc('set_organisation_setting', { p_key: 'axcelerate_contact_watch_list', p_value: ids });
+    if (error) throw error;
   }
 
   async function handleAddWatch(e: React.FormEvent) {

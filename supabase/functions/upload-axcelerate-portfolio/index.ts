@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,8 +29,9 @@ async function verifyAuth(req: Request, supabase: any): Promise<boolean> {
   );
   const { data: { user }, error } = await anonClient.auth.getUser();
   if (error || !user) return false;
-  const { data: p } = await anonClient.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  return !!(p && ["admin", "trainer"].includes(p.role));
+  // Issue #40: only Administration/Technical staff of the RTO that owns the
+  // platform aXcelerate credentials may trigger this integration.
+  return await isIntegrationStaff(authHeader, ["administration", "technical"], supabase);
 }
 
 // ── Report generation ─────────────────────────────────────────────────────────
@@ -294,6 +296,15 @@ Deno.serve(async (req: Request) => {
     if (!invitation) {
       return new Response(JSON.stringify({ error: "Invitation not found" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Issue #40: the platform aXcelerate credentials belong to one RTO. Refuse
+    // to write another RTO's candidate into that RTO's aXcelerate account.
+    const integrationOrganisationId = await getIntegrationOrganisationId(supabase);
+    if (!integrationOrganisationId || invitation.organisation_id !== integrationOrganisationId) {
+      return new Response(JSON.stringify({ error: "aXcelerate integration is not configured for this candidate's organisation" }), {
+        status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 

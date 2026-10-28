@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getIntegrationOrganisationId, getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,8 +51,29 @@ Deno.serve(async (req: Request) => {
     if (!profile) {
       return unauthorized(`no profile found for user ${user.id}`);
     }
-    if (profile.role !== "admin") {
-      return unauthorized(`role is '${profile.role}', admin required`);
+    // Issue #40: workspace permission in the RTO that owns the integration.
+    // When no owner is recorded yet and no credentials exist, the first
+    // Administration/Technical user to save credentials claims it for their RTO.
+    const staff = await getStaffContext(authHeader, serviceClient);
+    if (!hasAnyWorkspace(staff, ["administration", "technical"])) {
+      return unauthorized("Administration or Technical workspace access is required");
+    }
+    const integrationOrganisationId = await getIntegrationOrganisationId(serviceClient);
+    if (integrationOrganisationId && integrationOrganisationId !== staff!.organisationId) {
+      return unauthorized("aXcelerate credentials are managed by the RTO that owns this integration");
+    }
+    if (!integrationOrganisationId) {
+      const { data: existingTokens } = await serviceClient
+        .from("settings").select("key").in("key", ["axcelerate_api_token", "axcelerate_ws_token"]);
+      if ((existingTokens ?? []).length > 0) {
+        return unauthorized("aXcelerate integration owner is not recorded; ask the platform operator to record it");
+      }
+      const { error: claimError } = await serviceClient.from("settings").insert({
+        key: "legacy_server_settings_organisation_id",
+        value: staff!.organisationId,
+        updated_at: new Date().toISOString(),
+      });
+      if (claimError) return unauthorized("aXcelerate integration owner could not be recorded");
     }
 
     const { api_token, ws_token } = await req.json();
