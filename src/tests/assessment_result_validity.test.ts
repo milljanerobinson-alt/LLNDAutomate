@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  buildInboundNote, checkDigitalSufficiency, checkLlnSufficiency, courseReadiness, escapeLike, evaluateResult,
-  latestCompletedResult, matchStudent, outcomeSignature, ownInvitations, parseValidityPolicy, planAssessments,
-  planForPreviousLog, shouldWriteNote, skillKey, validityFingerprint,
-  type CourseContext, type Decision, type LearnerInvitation, type PreviousLog, type StudentRow,
+  assessQualificationChange, buildInboundNote, checkDigitalSufficiency, checkLlnSufficiency, courseReadiness, escapeLike,
+  evaluateResult, latestCompletedResult, mappingApprovalState, matchStudent, normaliseRequirements, outcomeSignature,
+  ownInvitations, parseValidityPolicy, planAssessments, planForPreviousLog, shouldWriteNote, skillKey, validityFingerprint,
+  type ApprovalRecord, type CourseContext, type Decision, type LearnerInvitation, type PlanMode, type PreviousLog,
+  type StudentRow,
 } from '../../supabase/functions/_shared/result-validity';
 
 // Assessment-result validity and safe reuse (P0). Numbers in the describe
@@ -16,17 +17,14 @@ const ORG = 'org-1';
 const OTHER = 'org-2';
 const NOW = new Date('2026-10-29T00:00:00.000Z');
 const daysAgo = (n: number, ms = 0) => new Date(NOW.getTime() - n * DAY - ms).toISOString();
-const COURSE: CourseContext = {
-  qualificationId: 'q-cert3',
-  mappingStatus: 'custom_mapping',
-  mappingReviewedAt: daysAgo(30),
-  requirements: [
-    { domain: 'literacy', acsf_skill: 'Reading', minimum_acsf_level: 3 },
-    { domain: 'language', acsf_skill: 'Oral Communication', minimum_acsf_level: 2 },
-    { domain: 'numeracy', acsf_skill: 'Numeracy', minimum_acsf_level: 2 },
-    { domain: 'digital', acsf_skill: 'Digital Literacy', minimum_acsf_level: 2 },
-  ],
-};
+const REQS = [
+  { domain: 'literacy', acsf_skill: 'Reading', minimum_acsf_level: 3 },
+  { domain: 'language', acsf_skill: 'Oral Communication', minimum_acsf_level: 2 },
+  { domain: 'numeracy', acsf_skill: 'Numeracy', minimum_acsf_level: 2 },
+  { domain: 'digital', acsf_skill: 'Digital Literacy', minimum_acsf_level: 2 },
+];
+const APPROVED = { approved: true, reason: '', approvalId: 'appr-1' };
+const COURSE: CourseContext = { qualificationId: 'q-cert3', enrolmentVerified: true, approval: APPROVED, requirements: REQS };
 const GOOD_LLN = { reading: 3, writing: 3, numeracy: 3, oral_communication: 3, learning: 3 };
 const POLICY = { lln_days: 365, digital_days: 180 };
 
@@ -43,8 +41,11 @@ function completed(overrides: Partial<LearnerInvitation> = {}): LearnerInvitatio
 function plan(opts: {
   invitations?: LearnerInvitation[]; previousLog?: PreviousLog | null; policy?: { lln_days: number | null; digital_days: number | null };
   lln?: boolean; digital?: boolean; course?: Partial<CourseContext>; now?: Date; passMarks?: Record<string, number | null>;
+  mode?: PlanMode; asOf?: Date;
 }): Decision[] {
   return planAssessments({
+    mode: opts.mode ?? 'new',
+    asOf: opts.asOf ?? opts.now ?? NOW,
     organisationId: ORG,
     llnRequired: opts.lln ?? true,
     digitalRequired: opts.digital ?? true,
@@ -76,7 +77,7 @@ describe('validity setting', () => {
 describe('1–3. inside, outside and at the validity boundary', () => {
   const evalAt = (completedAt: string, days: number) => evaluateResult({
     type: 'lln', completedAtRaw: completedAt, validityDays: days, course: COURSE,
-    sufficiency: { sufficient: true, detail: 'ok' }, now: NOW,
+    sufficiency: { sufficient: true, detail: 'ok' }, asOf: NOW, now: NOW,
   });
   it('1. a result inside the period is reused', () => {
     expect(evalAt(daysAgo(100), 365).status).toBe('valid');
@@ -190,79 +191,151 @@ describe('8. results below course requirements', () => {
 });
 
 describe('9. missing or unapproved course mappings (no fallback thresholds)', () => {
+  const unapproved = { approved: false, reason: "the course's ACSF mapping has not been approved by the RTO", approvalId: null };
   it('course not identified → not reused', () => {
     expect(of(plan({ course: { qualificationId: null } }), 'lln').check?.reason).toContain('course for this enrolment could not be identified');
   });
-  it.each([
-    ['mapping required', { mappingStatus: 'mapping_required' }],
-    ['review required', { mappingStatus: 'review_required' }],
-    ['no mapping status', { mappingStatus: null }],
-    ['never reviewed', { mappingReviewedAt: null }],
-    ['review older than 365 days', { mappingReviewedAt: daysAgo(366) }],
-  ])('%s → not reused, held for review', (_l, course) => {
-    const d = plan({ course: course as Partial<CourseContext> });
+  it('unapproved mapping → held for review, both modules', () => {
+    const d = plan({ course: { approval: unapproved } });
     expect(of(d, 'lln').action).toBe('review');
     expect(of(d, 'digital').action).toBe('review');
   });
   it('no LLN requirements recorded → LLN not reused; the old ACSF 2 fallback is gone', () => {
-    const c = { ...COURSE, requirements: [] };
-    expect(courseReadiness(c, 'lln', NOW).ready).toBe(false);
+    expect(courseReadiness({ ...COURSE, requirements: [] }, 'lln').ready).toBe(false);
     expect(checkLlnSufficiency(GOOD_LLN, []).sufficient).toBeNull();
     expect(of(plan({ course: { requirements: [] } }), 'lln').action).toBe('review');
   });
-  it('an expired result is reassessed even when the mapping is incomplete', () => {
+  it('an expired result is reassessed for a new enrolment even when the mapping is incomplete', () => {
     expect(of(plan({ course: { qualificationId: null }, invitations: [completed({ lln_completed_at: daysAgo(400) })] }), 'lln').action).toBe('sent');
   });
 });
 
-describe('10–12. changed policy, changed requirements, previously processed records', () => {
-  const fp = (policy = POLICY, course = COURSE) => validityFingerprint(policy, course, true, true);
+describe('mapping approval (no time-based expiry)', () => {
+  const approval = (o: Partial<ApprovalRecord> = {}): ApprovalRecord => ({
+    id: 'appr-1', decision: 'approved', requirements_snapshot: REQS, source_release: '3', decided_at: daysAgo(900), ...o,
+  });
+  it('an approved mapping stays approved well beyond 365 days when no change is detected', () => {
+    const state = mappingApprovalState({ approvals: [approval({ decided_at: daysAgo(1000) })], requirements: REQS, changeDetectedAt: null });
+    expect(state).toEqual({ approved: true, reason: '', approvalId: 'appr-1' });
+    expect(of(plan({ course: { approval: state } }), 'lln').action).toBe('existing');
+  });
+  it('an approval carried over from an existing reviewed date counts as approval', () => {
+    expect(mappingApprovalState({ approvals: [approval({ decision: 'migrated_approval' })], requirements: REQS, changeDetectedAt: null }).approved).toBe(true);
+  });
+  it('a recorded training.gov.au change holds reuse until re-approved', () => {
+    const s1 = mappingApprovalState({ approvals: [approval()], requirements: REQS, changeDetectedAt: daysAgo(1) });
+    expect(s1.approved).toBe(false);
+    expect(s1.reason).toContain('changed on training.gov.au');
+    const s2 = mappingApprovalState({ approvals: [{ ...approval(), id: 'flag', decision: 'review_required', decided_at: daysAgo(1) }, approval()], requirements: REQS, changeDetectedAt: null });
+    expect(s2.approved).toBe(false);
+    expect(of(plan({ course: { approval: s1 } }), 'lln').action).toBe('review');
+  });
+  it('review and re-approval after a change restores reuse, with history kept', () => {
+    const history: ApprovalRecord[] = [
+      approval({ id: 'appr-2', decided_at: daysAgo(0), source_release: '4' }),
+      { ...approval(), id: 'flag', decision: 'review_required', decided_at: daysAgo(5) },
+      approval({ id: 'appr-1', decided_at: daysAgo(900), source_release: '3' }),
+    ];
+    const state = mappingApprovalState({ approvals: history, requirements: REQS, changeDetectedAt: null });
+    expect(state).toEqual({ approved: true, reason: '', approvalId: 'appr-2' });
+    expect(history.map(h => h.id)).toEqual(['appr-2', 'flag', 'appr-1']);
+  });
+  it('ACSF levels changed after approval (e.g. regenerated) are not approved', () => {
+    const raised = REQS.map(r => r.acsf_skill === 'Reading' ? { ...r, minimum_acsf_level: 4 } : r);
+    const state = mappingApprovalState({ approvals: [approval()], requirements: raised, changeDetectedAt: null });
+    expect(state.approved).toBe(false);
+    expect(state.reason).toContain('ACSF levels have changed since the RTO approved them');
+  });
+  it('approval comparison ignores ordering', () => {
+    expect(normaliseRequirements([...REQS].reverse())).toBe(normaliseRequirements(REQS));
+  });
+  it('no approval at all → not approved', () => {
+    expect(mappingApprovalState({ approvals: [], requirements: REQS, changeDetectedAt: null }).approved).toBe(false);
+  });
+});
+
+describe('training.gov.au change detection', () => {
+  const approved = { code: 'BSB30120', release: '3' };
+  it('a new release is a relevant change', () => {
+    expect(assessQualificationChange(approved, { available: true, code: 'BSB30120', release: '4', status: 'Current' }))
+      .toEqual({ result: 'changed', changes: ['release changed from 3 to 4'] });
+  });
+  it('superseded or deleted status is a relevant change', () => {
+    const r = assessQualificationChange(approved, { available: true, code: 'BSB30120', release: '3', status: 'Superseded', supersededBy: 'BSB30125' });
+    expect(r.result).toBe('changed');
+    expect(r.result === 'changed' && r.changes[0]).toContain('superseded by BSB30125');
+  });
+  it('a change to the units of competency is a relevant change', () => {
+    expect(assessQualificationChange({ ...approved, componentsHash: 'a' }, { available: true, code: 'BSB30120', release: '3', status: 'Current', componentsHash: 'b' }).result).toBe('changed');
+  });
+  it('the same release and current status → no change', () => {
+    expect(assessQualificationChange(approved, { available: true, code: 'bsb30120 ', release: '3', status: 'Current' })).toEqual({ result: 'current' });
+  });
+  it('a change to a different qualification does not affect this mapping', () => {
+    expect(assessQualificationChange(approved, { available: true, code: 'CHC33021', release: '9', status: 'Superseded' }).result).toBe('not_applicable');
+  });
+  it('training.gov.au unavailable is reported as unavailable, never as no change', () => {
+    const r = assessQualificationChange(approved, { available: false, error: 'timeout' });
+    expect(r).toEqual({ result: 'unavailable', reason: 'timeout' });
+    expect(r.result).not.toBe('current');
+  });
+  it('an approval without a recorded release is flagged for review on the first successful check', () => {
+    expect(assessQualificationChange({ code: 'BSB30120', release: null }, { available: true, code: 'BSB30120', release: '3', status: 'Current' }).result).toBe('changed');
+  });
+});
+
+describe('10–12. existing enrolments, changed settings and previously processed records', () => {
+  const fp = (course = COURSE) => validityFingerprint(course, true, true);
   const validated = (over: Partial<PreviousLog> = {}): PreviousLog => ({
     status: 'skipped', invitation_id: null, lln_invitation_id: 'inv-old', digital_invitation_id: 'inv-old',
-    validated_at: daysAgo(1), validity_fingerprint: fp(), validity_checks: [{ valid_until: daysAgo(-200) }],
-    outcome_signature: 'x', note_written: true, ...over,
+    created_at: daysAgo(200), decision_at: daysAgo(200), validated_at: daysAgo(200), validity_fingerprint: fp(),
+    validity_checks: [{ valid_until: daysAgo(100) }], outcome_signature: 'x', note_written: true, ...over,
   });
-  it('12. a validated, unchanged, unexpired entry stands', () => {
-    expect(planForPreviousLog(validated(), NOW, fp()).recheck).toBe(false);
+  it('no previous record → a fresh check for a new enrolment', () => {
+    expect(planForPreviousLog(null, NOW, fp()).mode).toBe('new');
   });
-  it('12. an entry written before validity checks is re-checked', () => {
-    expect(planForPreviousLog(validated({ validated_at: null }), NOW, fp())).toMatchObject({ recheck: true });
+  it('an existing enrolment whose accepted result has since expired keeps its decision', () => {
+    const p = planForPreviousLog(validated(), NOW, fp());
+    expect(p.mode).toBe('stand');
+    expect(p.asOf.toISOString()).toBe(daysAgo(200));
   });
-  it('12. an entry is re-checked once a result it relied on expires', () => {
-    expect(planForPreviousLog(validated({ validity_checks: [{ valid_until: NOW.toISOString() }] }), NOW, fp())).toMatchObject({ recheck: true, reason: 'a relied-on result has expired' });
-  });
-  it('12. an entry is re-checked when the course mapping falls due for review', () => {
-    expect(planForPreviousLog(validated({ validity_checks: [{ valid_until: daysAgo(-200), recheck_by: daysAgo(1) }] }), NOW, fp()).recheck).toBe(true);
-  });
-  it('12. a review hold is always re-checked', () => {
-    expect(planForPreviousLog(validated({ status: 'review_required' }), NOW, fp()).recheck).toBe(true);
-  });
-  it('10. changing the validity policy forces a re-check, and the new period applies', () => {
-    const newPolicy = { lln_days: 90, digital_days: 180 };
-    expect(planForPreviousLog(validated(), NOW, fp(newPolicy))).toMatchObject({ recheck: true, reason: 'validity policy or course requirements changed' });
-    expect(of(plan({ policy: newPolicy }), 'lln').action).toBe('sent');
+  it('10. a changed validity period applies to new enrolments, not existing decisions', () => {
+    expect(planForPreviousLog(validated(), NOW, validityFingerprint(COURSE, true, true)).mode).toBe('stand');
+    expect(of(plan({ policy: { lln_days: 90, digital_days: 180 } }), 'lln').action).toBe('sent');
     expect(of(plan({ policy: { lln_days: null, digital_days: 180 } }), 'lln').action).toBe('review');
   });
-  it('11. changing course requirements forces a re-check against the new requirements', () => {
-    const raised = { ...COURSE, requirements: COURSE.requirements.map(r => r.acsf_skill === 'Reading' ? { ...r, minimum_acsf_level: 4 } : r) };
-    expect(planForPreviousLog(validated(), NOW, fp(POLICY, raised)).recheck).toBe(true);
-    expect(of(plan({ course: raised }), 'lln').action).toBe('sent');
+  it('11. a course change re-checks the existing decision as at its original date', () => {
+    const raised = { ...COURSE, requirements: REQS.map(r => r.acsf_skill === 'Reading' ? { ...r, minimum_acsf_level: 4 } : r) };
+    const p = planForPreviousLog(validated(), NOW, fp(raised));
+    expect(p).toMatchObject({ mode: 'recheck_existing', reason: 'the course, its mapping approval or its ACSF levels changed' });
   });
-  it('11. a mapping approval change forces a re-check', () => {
-    expect(planForPreviousLog(validated(), NOW, fp(POLICY, { ...COURSE, mappingReviewedAt: daysAgo(2) })).recheck).toBe(true);
+  it('11. ...and a result that no longer meets the changed requirements is held for review, not reassessed', () => {
+    const raised = { requirements: REQS.map(r => r.acsf_skill === 'Reading' ? { ...r, minimum_acsf_level: 4 } : r) };
+    const d = of(plan({ course: raised, mode: 'recheck_existing', asOf: new Date(daysAgo(200)) }), 'lln');
+    expect(d.action).toBe('review');
+    expect(d.check?.reason).toContain('this enrolment was accepted earlier, but on re-checking');
   });
-  it('12. a review hold proceeds once the RTO sets a period', () => {
-    expect(of(plan({ previousLog: validated({ status: 'review_required' }) }), 'lln').action).toBe('existing');
+  it('12. an entry from before validity checks is re-checked as at its original date', () => {
+    const p = planForPreviousLog(validated({ validated_at: null, decision_at: null, created_at: daysAgo(300) }), NOW, fp());
+    expect(p.mode).toBe('recheck_existing');
+    expect(p.asOf.toISOString()).toBe(daysAgo(300));
   });
-  it('the assessment issued for this enrolment is never reissued for being below requirements', () => {
+  it('12. ...a result valid at that time stands; one that was already expired is held, not reassessed', () => {
+    const asOf = new Date(daysAgo(300));
+    expect(of(plan({ mode: 'recheck_existing', asOf, digital: false, invitations: [completed({ lln_completed_at: daysAgo(400) })] }), 'lln').action).toBe('existing');
+    const d = of(plan({ mode: 'recheck_existing', asOf, digital: false, invitations: [completed({ lln_completed_at: daysAgo(700) })] }), 'lln');
+    expect(d.action).toBe('review');
+  });
+  it('a review hold is re-checked and can proceed once the cause is fixed', () => {
+    const p = planForPreviousLog(validated({ status: 'review_required' }), NOW, fp());
+    expect(p.mode).toBe('resolve_hold');
+    expect(of(plan({ mode: p.mode, asOf: p.asOf, previousLog: validated({ status: 'review_required' }) }), 'lln').action).toBe('existing');
+  });
+  it('the assessment issued for this enrolment is never reissued — not when it expires, not when it fell short', () => {
     const log: PreviousLog = { status: 'created', invitation_id: 'mine', lln_invitation_id: 'mine', digital_invitation_id: null };
-    const mine = completed({ id: 'mine', lln_completed_at: daysAgo(15), lln_acsf_outcomes: { reading: 1 } });
-    expect(of(plan({ previousLog: log, digital: false, invitations: [mine] }), 'lln')).toMatchObject({ action: 'completed', invitationId: 'mine' });
-  });
-  it('...but it is reassessed once it expires', () => {
-    const log: PreviousLog = { status: 'created', invitation_id: 'mine', lln_invitation_id: 'mine', digital_invitation_id: null };
-    const mine = completed({ id: 'mine', lln_completed_at: daysAgo(400) });
-    expect(of(plan({ previousLog: log, digital: false, invitations: [mine] }), 'lln').action).toBe('sent');
+    for (const mine of [completed({ id: 'mine', lln_completed_at: daysAgo(900) }), completed({ id: 'mine', lln_completed_at: daysAgo(15), lln_acsf_outcomes: { reading: 1 } })]) {
+      expect(of(plan({ previousLog: log, mode: 'recheck_existing', asOf: NOW, digital: false, invitations: [mine] }), 'lln')).toMatchObject({ action: 'completed', invitationId: 'mine' });
+    }
   });
   it('reassessing one module keeps track of the other module’s own assessment', () => {
     const log: PreviousLog = {
@@ -272,6 +345,26 @@ describe('10–12. changed policy, changed requirements, previously processed re
     expect(ownInvitations(log).get('digital')).toBe('mine');
     const mine = completed({ id: 'mine', lln_status: null, digital_completed_at: daysAgo(10), digital_score: 10 });
     expect(of(plan({ previousLog: log, lln: false, invitations: [mine], passMarks: { mine: 50 } }), 'digital').action).toBe('completed');
+  });
+  it('the passing of time never changes the outcome signature of an enrolment’s own assessment', () => {
+    const log: PreviousLog = { status: 'created', invitation_id: 'mine', lln_invitation_id: 'mine', digital_invitation_id: null };
+    const mine = completed({ id: 'mine', lln_completed_at: daysAgo(10) });
+    const early = plan({ previousLog: log, digital: false, invitations: [mine] });
+    const late = plan({ previousLog: log, digital: false, invitations: [mine], now: new Date(NOW.getTime() + 800 * DAY), asOf: new Date(NOW.getTime() + 800 * DAY) });
+    expect(outcomeSignature(late)).toBe(outcomeSignature(early));
+  });
+});
+
+describe('uncertain enrolment identity', () => {
+  it('an enrolment that could not be confirmed in aXcelerate is never used for reuse', () => {
+    const d = of(plan({ course: { enrolmentVerified: false } }), 'lln');
+    expect(d.action).toBe('review');
+    expect(d.check?.reason).toContain("enrolment could not be confirmed");
+  });
+  it('a repeated event for the same contact, modules and course is the same enrolment', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../../supabase/functions/axcelerate-inbound-sync/index.ts'), 'utf8');
+    expect(src).toContain('let enrolmentVerified = !!axcelerateCourseId;');
+    expect(src).toContain('enrolmentVerified = enrolmentResult.checked && enrolmentResult.hasActiveEnrolment;');
   });
 });
 
@@ -320,8 +413,8 @@ describe('14. same learner with multiple enrolments', () => {
     expect(of(plan({ digital: false, course: higher }), 'lln').action).toBe('sent');
   });
   it('each enrolment has its own decision record and fingerprint', () => {
-    const a = validityFingerprint(POLICY, COURSE, true, false);
-    const b = validityFingerprint(POLICY, { ...COURSE, qualificationId: 'q-diploma' }, true, false);
+    const a = validityFingerprint(COURSE, true, false);
+    const b = validityFingerprint({ ...COURSE, qualificationId: 'q-diploma' }, true, false);
     expect(a).not.toBe(b);
     const src = fs.readFileSync(path.resolve(__dirname, '../../supabase/functions/axcelerate-inbound-sync/index.ts'), 'utf8');
     expect(src).toContain('const idempotencyKey = `${contactId}:${llnRequired ? "lln" : ""}_${digitalRequired ? "digital" : ""}:${qualificationId ?? "any"}`;');
@@ -409,10 +502,11 @@ describe('wiring and enrolment safety', () => {
   it('only short-circuits a previous entry the plan allows, within the RTO', () => {
     expect(src).toMatch(/axcelerate_inbound_sync_log"\)\s*\.select\("\*"\)\s*\.eq\("organisation_id", INTEGRATION_ORGANISATION_ID\)/);
     expect(src).toContain('planForPreviousLog(previousLog, now, fingerprint)');
-    expect(src).toContain('!plan.recheck');
+    expect(src).toContain('plan.mode === "stand"');
   });
   it('loads mapping approval with the qualification and records the fingerprint', () => {
-    expect(src).toContain('select("id, code, name, mapping_status, reviewed_at")');
+    expect(src).toContain('select("id, code, name, mapping_change_detected_at")');
+    expect(src).toMatch(/from\("qualification_mapping_approvals"\)[\s\S]{0,200}eq\("organisation_id", INTEGRATION_ORGANISATION_ID\)/);
     expect(src).toContain('validity_fingerprint: fingerprint');
     expect(src).not.toContain('DEFAULT_MIN_ACSF');
   });
@@ -425,6 +519,26 @@ describe('wiring and enrolment safety', () => {
   it('reuse never queues a write-back of its own', () => {
     const reuseBlock = src.slice(src.indexOf('// ── 7. Create invitations'), src.indexOf('// ── 8. Contact note'));
     expect(reuseBlock).toMatch(/if \(needsNewLln \|\| needsNewDigital\) \{[\s\S]*axcelerate_writeback_queue/);
+  });
+  it('the migration adds approval history, server-only source checks and result integrity', () => {
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS public.qualification_mapping_approvals');
+    expect(migration).toContain('FUNCTION public.approve_qualification_mapping(p_qualification_id uuid, p_source_release text, p_note text)');
+    expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.record_qualification_source_check\(uuid, text, jsonb\) FROM PUBLIC, anon, authenticated;/);
+    expect(migration).toContain('protect_qualification_source_columns');
+    expect(migration).toContain("NEW.lln_completed_at := now()");
+    expect(migration).toContain("a completed LLN result cannot be changed");
+    expect(migration).not.toMatch(/[^0-9]365[^0-9]|interval '1 year'/);
+  });
+  it('generated ACSF levels never replace RTO-approved levels', () => {
+    const compute = read('supabase/functions/compute-acsf-mapping/index.ts');
+    const guard = compute.indexOf('if (approvalState.approved) {');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(compute.indexOf('// Upsert requirements'));
+  });
+  it('the Qualifications page no longer expires mappings after 365 days', () => {
+    const page = read('src/pages/QualificationsPage.tsx');
+    expect(page).not.toContain('365 * 24 * 60 * 60 * 1000');
+    expect(page).toContain('<MappingApprovalPanel');
   });
   it('the migration adds the setting, validation, log columns and statuses, and seeds no default', () => {
     expect(migration).toContain("'assessment_result_validity') THEN 'administration'");

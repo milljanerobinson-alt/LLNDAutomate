@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { MappingApprovalPanel } from '../components/qualifications/MappingApprovalPanel';
 import {
   Award, Plus, Pencil, Trash2, X, ChevronDown, ChevronRight,
   AlertCircle, Loader2, Download, CheckCircle2, RefreshCw,
@@ -66,10 +67,9 @@ function computeDisplayStatus(
   reqs: QualificationLLNRequirement[]
 ): MappingStatus {
   if (reqs.length === 0) return 'mapping_required';
-  if (qual.reviewed_at) {
-    const age = Date.now() - new Date(qual.reviewed_at).getTime();
-    if (age > 365 * 24 * 60 * 60 * 1000) return 'review_required';
-  }
+  // An approved mapping stays approved until a training.gov.au change is
+  // recorded for this qualification — there is no time-based review expiry.
+  if ((qual as Qualification & { mapping_change_detected_at?: string | null }).mapping_change_detected_at) return 'review_required';
   return (qual.mapping_status as MappingStatus) || 'custom_mapping';
 }
 
@@ -955,6 +955,8 @@ export function QualificationsPage() {
                         </div>
                       )}
                     </div>
+
+                    <MappingApprovalPanel qualificationId={qual.id} onChanged={loadData} />
 
                     {/* Mapping Evidence link */}
                     <div className="mt-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">

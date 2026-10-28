@@ -11,8 +11,9 @@
   - its own completion date is present, valid and not in the future;
   - it's within your validity period;
   - the current enrolment's course is identified;
-  - the course's ACSF mapping has been reviewed (approved) within the last
-    365 days, the same rule the Qualifications page uses;
+  - the course's ACSF mapping is approved by your RTO for its current levels,
+    and no training.gov.au change has been recorded since. Approval doesn't
+    expire with time;
   - LLN: every required ACSF skill is met. Digital: the pass mark of the
     Digital assessment sat is met.
 - LLN and Digital are decided separately. If only one needs reassessment, the
@@ -20,13 +21,20 @@
 - Expired or below-requirement results → a new assessment for that module.
   Anything that can't be checked → *Review required* on the aXcelerate inbound
   page, with the reason.
-- Earlier "already processed" records are re-checked against current
-  requirements when any of these happen:
-  - they were recorded before these checks;
-  - your validity period changes;
-  - the course, its mapping approval or its requirements change;
-  - a result they relied on expires;
-  - the course mapping falls due for review.
+- A learner already accepted for an enrolment is not reassessed mid-course
+  just because time passes; repeated sync events never trigger reassessment.
+  If the course's approved levels change, or an older record doesn't pass a
+  re-check, it's held for your review rather than reassessed automatically.
+  A changed validity period applies to new enrolments.
+- ACSF mapping approval (Qualifications page):
+  - shows who approved it, when, and the training.gov.au release reviewed;
+  - keeps the full decision history;
+  - when a training.gov.au change is recorded, shows what changed and holds
+    reuse until you approve again;
+  - your approved levels are never replaced by generated suggestions; a
+    suggestion is recorded for you to review.
+- Candidate completion times are stamped by the server, and a completed
+  result can't be changed through the assessment link.
 - Student matching is stricter:
   - aXcelerate contact ID first;
   - then exact name and date of birth;

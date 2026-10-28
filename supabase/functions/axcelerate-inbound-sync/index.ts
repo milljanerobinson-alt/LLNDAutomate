@@ -4,7 +4,8 @@ import {
   VALIDITY_SETTING_KEY, buildInboundNote, escapeLike, latestCompletedResult, matchStudent, outcomeSignature,
   isOwnDecision, ownInvitations, parseValidityPolicy, planAssessments, planForPreviousLog, shouldWriteNote,
   validityFingerprint,
-  type AssessmentType, type CourseContext, type Decision, type QualificationRequirement, type StudentRow,
+  mappingApprovalState,
+  type ApprovalRecord, type AssessmentType, type CourseContext, type Decision, type QualificationRequirement, type StudentRow,
 } from "../_shared/result-validity.ts";
 
 const corsHeaders = {
@@ -725,8 +726,13 @@ Deno.serve(async (req: Request) => {
     // through so a temporary outage doesn't silently block all syncs.
     let resolvedCourseId: number | null = axcelerateCourseId;
     let contactQualCode: string | null = null;
+    // Reuse of earlier results needs a confirmed enrolment. A course ID
+    // supplied by the caller (an aXcelerate event or RTO staff) counts as
+    // confirmed; an unreachable enrolment API does not.
+    let enrolmentVerified = !!axcelerateCourseId;
     if (!axcelerateCourseId) {
       const enrolmentResult = await fetchContactEnrolments(apiBaseUrl, apiToken, wsToken, contactId);
+      enrolmentVerified = enrolmentResult.checked && enrolmentResult.hasActiveEnrolment;
 
       if (enrolmentResult.checked && !enrolmentResult.hasActiveEnrolment) {
         await supabase.from("axcelerate_inbound_sync_log").upsert(
@@ -812,16 +818,14 @@ Deno.serve(async (req: Request) => {
     let qualificationId: string | null = null;
     let qualName = "N/A";
     let requirements: QualificationRequirement[] = [];
-    let mappingStatus: string | null = null;
-    let mappingReviewedAt: string | null = null;
+    let mappingChangeDetectedAt: string | null = null;
 
     const lookupQual = async (query: any) => {
       const { data: qual } = await query;
       if (!qual) return;
       qualificationId = qual.id;
       qualName = `${qual.code} ${qual.name}`;
-      mappingStatus = qual.mapping_status ?? null;
-      mappingReviewedAt = qual.reviewed_at ?? null;
+      mappingChangeDetectedAt = qual.mapping_change_detected_at ?? null;
       const { data: reqs } = await supabase
         .from("qualification_lln_requirements")
         .select("domain, acsf_skill, minimum_acsf_level")
@@ -831,7 +835,7 @@ Deno.serve(async (req: Request) => {
 
     if (resolvedCourseId) {
       await lookupQual(
-        supabase.from("qualifications").select("id, code, name, mapping_status, reviewed_at").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+        supabase.from("qualifications").select("id, code, name, mapping_change_detected_at").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .eq("axcelerate_course_id", resolvedCourseId).eq("active", true).maybeSingle()
       );
     }
@@ -839,7 +843,7 @@ Deno.serve(async (req: Request) => {
     // Fallback: look up by qualification code if still not found
     if (!qualificationId && contactQualCode) {
       await lookupQual(
-        supabase.from("qualifications").select("id, code, name, mapping_status, reviewed_at").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+        supabase.from("qualifications").select("id, code, name, mapping_change_detected_at").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .ilike("code", contactQualCode).eq("active", true).maybeSingle()
       );
     }
@@ -898,8 +902,25 @@ Deno.serve(async (req: Request) => {
       .from("organisation_settings").select("value")
       .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("key", VALIDITY_SETTING_KEY).maybeSingle();
     const validityPolicy = parseValidityPolicy(validityRow?.value);
-    const course: CourseContext = { qualificationId, mappingStatus, mappingReviewedAt, requirements };
-    const fingerprint = validityFingerprint(validityPolicy, course, llnRequired, digitalRequired);
+    let approvals: ApprovalRecord[] = [];
+    if (qualificationId) {
+      const { data: approvalRows, error: approvalError } = await supabase
+        .from("qualification_mapping_approvals")
+        .select("id, decision, requirements_snapshot, source_release, decided_at")
+        .eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+        .eq("qualification_id", qualificationId)
+        .order("decided_at", { ascending: false })
+        .limit(10);
+      // An approval that can't be read is treated as no approval (fail closed).
+      approvals = approvalError ? [] : (approvalRows ?? []);
+    }
+    const course: CourseContext = {
+      qualificationId,
+      enrolmentVerified,
+      approval: mappingApprovalState({ approvals, requirements, changeDetectedAt: mappingChangeDetectedAt }),
+      requirements,
+    };
+    const fingerprint = validityFingerprint(course, llnRequired, digitalRequired);
     let previousLog = existingLog ?? null;
 
     if (existingLog && existingLog.status === "created") {
@@ -920,10 +941,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // A previous entry stands only if it was validated, nothing it depends on
-    // has changed, and no result it relied on has since expired.
+    // An existing enrolment's validated decision stands unless its course
+    // changed; time passing and repeated events never reopen it.
     const plan = planForPreviousLog(previousLog, now, fingerprint);
-    if (previousLog && !plan.recheck && ["created", "skipped"].includes(previousLog.status)) {
+    if (previousLog && plan.mode === "stand" && ["created", "skipped"].includes(previousLog.status)) {
       // Validated earlier for this enrolment: keep the decision. Patch a
       // missing email and retry a failed note, as before.
       if (previousLog.status === "created" && email && previousLog.invitation_id) {
@@ -995,8 +1016,12 @@ Deno.serve(async (req: Request) => {
       const invitations = await learnerInvitations(supabase, { studentId, contactId, fullName, dob });
       const digitalPassMarks: Record<string, number | null> = {};
       if (digitalRequired) {
+        const ids = new Set<string>();
         const latestDigital = latestCompletedResult(invitations, "digital", INTEGRATION_ORGANISATION_ID);
-        if (latestDigital) digitalPassMarks[latestDigital.id] = await digitalPassMark(supabase, latestDigital.id);
+        if (latestDigital) ids.add(latestDigital.id);
+        const ownDigital = ownInvitations(previousLog).get("digital");
+        if (ownDigital) ids.add(ownDigital);
+        for (const id of ids) digitalPassMarks[id] = await digitalPassMark(supabase, id);
       }
       decisions = planAssessments({
         organisationId: INTEGRATION_ORGANISATION_ID,
@@ -1004,6 +1029,8 @@ Deno.serve(async (req: Request) => {
         digitalRequired,
         invitations,
         previousLog,
+        mode: plan.mode,
+        asOf: plan.asOf,
         policy: validityPolicy,
         course,
         digitalPassMarks,
@@ -1168,7 +1195,7 @@ Deno.serve(async (req: Request) => {
       ? (["lln", "digital"] as AssessmentType[])
           .filter((t) => (t === "lln" ? llnRequired : digitalRequired))
           .map((t) => ({ type: t, action: "review" as const, invitationId: null,
-            check: { status: "unverifiable" as const, reason: `${ambiguousReason}, so the learner could not be identified reliably`, completedAt: null, validUntil: null, validityDays: null, sufficiencyDetail: null, recheckBy: null } }))
+            check: { status: "unverifiable" as const, reason: `${ambiguousReason}, so the learner could not be identified reliably`, completedAt: null, validUntil: null, validityDays: null, sufficiencyDetail: null } }))
       : decisions.map((d) => d.action === "sent"
           ? { ...d, invitationId: (d.type === "lln" ? llnInvitationId : digitalInvitationId) }
           : d);
@@ -1244,7 +1271,8 @@ Deno.serve(async (req: Request) => {
         note_text: writeNote ? noteText : (previousLog?.note_text ?? noteText),
         note_written: noteWritten,
         outcome_signature: signature,
-        decision_at: now.toISOString(),
+        // An existing enrolment keeps its original decision time.
+        decision_at: plan.asOf.toISOString(),
         validated_at: needsReview ? null : now.toISOString(),
         validity_fingerprint: fingerprint,
         validity_checks: finalDecisions.map((d) => ({
@@ -1252,7 +1280,6 @@ Deno.serve(async (req: Request) => {
           own: isOwnDecision(d, previousOwn, newInvitationId),
           status: d.check?.status ?? null, reason: d.check?.reason ?? null,
           completed_at: d.check?.completedAt ?? null, valid_until: d.check?.validUntil ?? null,
-          recheck_by: d.check?.recheckBy ?? null,
           validity_days: d.check?.validityDays ?? null, requirements: d.check?.sufficiencyDetail ?? null,
         })),
         error: ambiguousReason,

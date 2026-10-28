@@ -3,24 +3,27 @@
 // Pure functions (no Deno or Supabase imports) so the same rules run in the
 // Edge Function and in the project's Vitest suite.
 //
-// A completed LLN or Digital result is reused only when ALL checks pass:
+// A completed LLN or Digital result is reused for a NEW enrolment only when
+// ALL checks pass:
 //   1. it belongs to this learner within this RTO (exact matching; ambiguity
 //      → review);
 //   2. its OWN completion date (lln_completed_at / digital_completed_at —
 //      never the other module's date or the invitation's overall date) is
 //      present, valid and not in the future;
 //   3. the RTO has configured a validity period for that module (there is no
-//      default);
-//   4. it is inside that period now;
-//   5. the current enrolment's qualification is identified, its ACSF mapping
-//      is approved (reviewed by the RTO) and LLN requirements are recorded;
-//   6. LLN: every required ACSF core skill is met. Digital: the pass mark of
+//      default) and the result is inside it;
+//   4. the enrolment and its course are identified, and the course's ACSF
+//      mapping is approved by the RTO — the approval covers the current ACSF
+//      levels and no training.gov.au change has been recorded since;
+//   5. LLN: every required ACSF core skill is met. Digital: the pass mark of
 //      the Digital assessment the candidate sat is met.
-// No fallback thresholds are used to approve reuse.
+// No fallback thresholds and no time-based mapping expiry.
 //
-// Outcomes per module: reuse (all checks pass) · reassess (expired or below
-// requirements) · hold for RTO review (anything that can't be verified).
-// Fail-closed: nothing unverifiable is described as valid or reused.
+// An EXISTING enrolment keeps its original decision. Time passing never
+// reissues an assessment; a course change or a failed re-check of an older
+// record holds it for RTO review instead.
+// Unverifiable → held for review: never described as valid, never reused,
+// and no assessment sent automatically.
 
 export type AssessmentType = "lln" | "digital";
 
@@ -53,10 +56,17 @@ export interface QualificationRequirement {
   minimum_acsf_level: number;
 }
 
+export interface MappingApproval {
+  approved: boolean;
+  reason: string;
+  approvalId: string | null;
+}
+
 export interface CourseContext {
   qualificationId: string | null;
-  mappingStatus: string | null;
-  mappingReviewedAt: string | null;
+  /** False when aXcelerate's enrolment endpoints couldn't be checked. */
+  enrolmentVerified: boolean;
+  approval: MappingApproval;
   requirements: QualificationRequirement[];
 }
 
@@ -66,9 +76,6 @@ export function skillKey(skill: string): string {
 }
 
 const LLN_SKILLS = new Set(["reading", "writing", "numeracy", "oral_communication", "learning"]);
-const APPROVED_MAPPING_STATUSES = new Set(["default_mapping_applied", "custom_mapping"]);
-/** Same review period the Qualifications page uses to show "Review required". */
-export const MAPPING_REVIEW_PERIOD_DAYS = 365;
 
 /** Requirements the LLN assessment measures (Digital Literacy is measured by the Digital assessment). */
 export function llnRequirements(reqs: QualificationRequirement[]): Array<{ skill: string; level: number; label: string }> {
@@ -77,26 +84,106 @@ export function llnRequirements(reqs: QualificationRequirement[]): Array<{ skill
     .map((r) => ({ skill: skillKey(r.acsf_skill!), level: r.minimum_acsf_level, label: r.acsf_skill!.trim() }));
 }
 
+/** Order-independent form of a set of ACSF requirements (matches the database snapshot). */
+export function normaliseRequirements(reqs: Array<Partial<QualificationRequirement>>): string {
+  return reqs
+    .map((r) => `${skillKey(String(r.acsf_skill ?? r.domain ?? ""))}=${Number(r.minimum_acsf_level)}`)
+    .sort()
+    .join(",");
+}
+
+export interface ApprovalRecord {
+  id: string;
+  decision: "approved" | "migrated_approval" | "review_required" | string;
+  requirements_snapshot: Array<Partial<QualificationRequirement>> | null;
+  source_release?: string | null;
+  decided_at: string;
+}
+
 /**
- * Whether the course can support an automatic reuse decision. The mapping
- * must have been reviewed by the RTO (reviewed_at) and not be flagged as
- * needing mapping or review.
+ * Whether the course's ACSF mapping is approved now. An approval stands
+ * until a training.gov.au change is recorded or the ACSF levels change —
+ * never because time has passed.
  */
-export function courseReadiness(course: CourseContext, type: AssessmentType, now: Date): { ready: boolean; reason: string } {
+export function mappingApprovalState(input: {
+  approvals: ApprovalRecord[];
+  requirements: QualificationRequirement[];
+  changeDetectedAt: string | null;
+  changeSummary?: unknown;
+}): MappingApproval {
+  const sorted = [...input.approvals].sort((a, b) => (parseCompletionDate(b.decided_at)?.getTime() ?? 0) - (parseCompletionDate(a.decided_at)?.getTime() ?? 0));
+  const latest = sorted[0];
+  if (input.changeDetectedAt || latest?.decision === "review_required") {
+    return { approved: false, reason: "the qualification has changed on training.gov.au and its ACSF mapping is awaiting RTO review", approvalId: null };
+  }
+  const approval = sorted.find((a) => a.decision === "approved" || a.decision === "migrated_approval");
+  if (!approval) return { approved: false, reason: "the course's ACSF mapping has not been approved by the RTO", approvalId: null };
+  if (normaliseRequirements(approval.requirements_snapshot ?? []) !== normaliseRequirements(input.requirements)) {
+    return { approved: false, reason: "the course's ACSF levels have changed since the RTO approved them", approvalId: null };
+  }
+  return { approved: true, reason: "", approvalId: approval.id };
+}
+
+/** Whether the course can support an automatic reuse decision. */
+export function courseReadiness(course: CourseContext, type: AssessmentType): { ready: boolean; reason: string } {
+  if (!course.enrolmentVerified) {
+    return { ready: false, reason: "the learner's aXcelerate enrolment could not be confirmed" };
+  }
   if (!course.qualificationId) {
     return { ready: false, reason: "the course for this enrolment could not be identified" };
   }
-  const reviewed = parseCompletionDate(course.mappingReviewedAt);
-  if (!course.mappingStatus || !APPROVED_MAPPING_STATUSES.has(course.mappingStatus) || !reviewed) {
-    return { ready: false, reason: "the course's ACSF requirements have not been approved by the RTO" };
-  }
-  if (now.getTime() - reviewed.getTime() > MAPPING_REVIEW_PERIOD_DAYS * DAY_MS) {
-    return { ready: false, reason: "the course's ACSF requirements are due for review" };
-  }
+  if (!course.approval.approved) return { ready: false, reason: course.approval.reason };
   if (type === "lln" && llnRequirements(course.requirements).length === 0) {
     return { ready: false, reason: "no LLN requirements are recorded for this course" };
   }
   return { ready: true, reason: "" };
+}
+
+// ── training.gov.au change assessment ────────────────────────────────────────
+
+export interface SourceObservation {
+  available: boolean;
+  error?: string;
+  code?: string | null;
+  release?: string | null;
+  status?: string | null; // e.g. "Current", "Superseded", "Deleted"
+  supersededBy?: string | null;
+  componentsHash?: string | null; // e.g. hash of core/elective unit list
+}
+
+export interface ApprovedSource {
+  code: string;
+  release: string | null;
+  componentsHash?: string | null;
+}
+
+export type SourceAssessment =
+  | { result: "unavailable"; reason: string }
+  | { result: "not_applicable"; reason: string }
+  | { result: "current" }
+  | { result: "changed"; changes: string[] };
+
+/**
+ * Compares one qualification's approved source with what training.gov.au
+ * reports now. A failed check is "unavailable" — never proof of no change.
+ * Information about a different qualification is ignored.
+ */
+export function assessQualificationChange(approved: ApprovedSource, observed: SourceObservation): SourceAssessment {
+  if (!observed.available) return { result: "unavailable", reason: observed.error || "training.gov.au could not be reached" };
+  const sameCode = (observed.code ?? "").trim().toUpperCase() === approved.code.trim().toUpperCase();
+  if (!sameCode) return { result: "not_applicable", reason: `information is for ${observed.code ?? "another qualification"}, not ${approved.code}` };
+  const changes: string[] = [];
+  const status = (observed.status ?? "").trim().toLowerCase();
+  if (!approved.release) {
+    changes.push(`the approved release was not recorded; training.gov.au shows release ${observed.release ?? "unknown"}`);
+  } else if (observed.release && observed.release.trim() !== approved.release.trim()) {
+    changes.push(`release changed from ${approved.release} to ${observed.release}`);
+  }
+  if (status && status !== "current") changes.push(`status is now ${observed.status}${observed.supersededBy ? ` (superseded by ${observed.supersededBy})` : ""}`);
+  if (approved.componentsHash && observed.componentsHash && approved.componentsHash !== observed.componentsHash) {
+    changes.push("units of competency changed");
+  }
+  return changes.length ? { result: "changed", changes } : { result: "current" };
 }
 
 export interface SufficiencyResult {
@@ -142,8 +229,6 @@ export interface ResultCheck {
   validUntil: string | null;
   validityDays: number | null;
   sufficiencyDetail: string | null;
-  /** When this decision must be re-checked: the earlier of the result's expiry and the course mapping's review date. */
-  recheckBy: string | null;
 }
 
 export function parseCompletionDate(raw: unknown): Date | null {
@@ -153,8 +238,9 @@ export function parseCompletionDate(raw: unknown): Date | null {
 }
 
 /**
- * Evaluates one module's result now.
- * Boundary: valid while now < completedAt + days; at exactly that instant it has expired.
+ * Evaluates one module's result as at `asOf` (the enrolment's decision time).
+ * `now` is only used to reject completion dates in the future.
+ * Boundary: valid while asOf < completedAt + days; at exactly that instant it has expired.
  */
 export function evaluateResult(input: {
   type: AssessmentType;
@@ -162,10 +248,11 @@ export function evaluateResult(input: {
   validityDays: number | null;
   course: CourseContext;
   sufficiency: SufficiencyResult;
+  asOf: Date;
   now: Date;
 }): ResultCheck {
   const label = input.type === "lln" ? "LLN" : "Digital";
-  const empty = { completedAt: null as string | null, validUntil: null as string | null, validityDays: input.validityDays, sufficiencyDetail: null as string | null, recheckBy: null as string | null };
+  const empty = { completedAt: null as string | null, validUntil: null as string | null, validityDays: input.validityDays, sufficiencyDetail: null as string | null };
   if (input.completedAtRaw === null || input.completedAtRaw === undefined || input.completedAtRaw === "") {
     return { ...empty, status: "unverifiable", reason: `the previous ${label} result has no completion date` };
   }
@@ -179,14 +266,11 @@ export function evaluateResult(input: {
     return { ...empty, completedAt, status: "not_configured", reason: `the RTO has not set how long ${label} results remain valid` };
   }
   const validUntil = new Date(completed.getTime() + input.validityDays * DAY_MS);
-  const reviewed = parseCompletionDate(input.course.mappingReviewedAt);
-  const mappingDue = reviewed ? reviewed.getTime() + MAPPING_REVIEW_PERIOD_DAYS * DAY_MS : Infinity;
-  const recheckBy = new Date(Math.min(validUntil.getTime(), mappingDue)).toISOString();
-  const dated = { ...empty, completedAt, validUntil: validUntil.toISOString(), recheckBy };
-  if (input.now.getTime() >= validUntil.getTime()) {
+  const dated = { ...empty, completedAt, validUntil: validUntil.toISOString() };
+  if (input.asOf.getTime() >= validUntil.getTime()) {
     return { ...dated, status: "expired", reason: `the previous ${label} result is older than the RTO's ${input.validityDays}-day validity period` };
   }
-  const readiness = courseReadiness(input.course, input.type, input.now);
+  const readiness = courseReadiness(input.course, input.type);
   if (!readiness.ready) return { ...dated, status: "unverifiable", reason: readiness.reason };
   if (input.sufficiency.sufficient === null) return { ...dated, status: "unverifiable", reason: input.sufficiency.detail };
   if (!input.sufficiency.sufficient) {
@@ -276,51 +360,55 @@ export interface PreviousLog {
   invitation_id: string | null;
   lln_invitation_id: string | null;
   digital_invitation_id: string | null;
+  created_at?: string | null;
+  decision_at?: string | null;
   validated_at?: string | null;
   validity_fingerprint?: string | null;
-  validity_checks?: Array<{ type?: string; own?: boolean; invitation_id?: string | null; valid_until?: string | null; recheck_by?: string | null }> | null;
+  validity_checks?: Array<{ type?: string; own?: boolean; invitation_id?: string | null; valid_until?: string | null }> | null;
   outcome_signature?: string | null;
   note_written?: boolean | null;
   note_text?: string | null;
 }
 
-/** Everything a reuse decision depends on, other than the results themselves. */
-export function validityFingerprint(policy: ValidityPolicy, course: CourseContext, llnRequired: boolean, digitalRequired: boolean): string {
-  const reqs = course.requirements
-    .map((r) => `${skillKey(r.acsf_skill ?? r.domain)}=${r.minimum_acsf_level}`)
-    .sort()
-    .join(",");
+/**
+ * What an existing enrolment's decision depends on in the course: which
+ * course, which mapping approval, and the ACSF levels. The RTO's validity
+ * period is deliberately excluded: a changed period applies to new
+ * enrolments, not to decisions already made.
+ */
+export function validityFingerprint(course: CourseContext, llnRequired: boolean, digitalRequired: boolean): string {
   return [
     `need=${llnRequired ? "L" : ""}${digitalRequired ? "D" : ""}`,
-    `lln=${policy.lln_days ?? "unset"}`,
-    `digital=${policy.digital_days ?? "unset"}`,
     `course=${course.qualificationId ?? "unknown"}`,
-    `mapping=${course.mappingStatus ?? "none"}@${course.mappingReviewedAt ?? "unreviewed"}`,
-    `reqs=${reqs}`,
+    `approval=${course.approval.approved ? course.approval.approvalId : "none"}`,
+    `reqs=${normaliseRequirements(course.requirements)}`,
   ].join(";");
 }
 
 /**
- * Whether a previous "already processed" entry may stand. It is re-checked,
- * against current requirements and the current date, when:
- * - it was written before validity checks existed (no validated_at);
- * - it is held for review;
- * - the RTO's validity policy, the course, its mapping approval or its
- *   requirements have changed since it was decided (fingerprint);
- * - any result it relied on has since reached the end of its validity period.
+ * new             — no previous record: a fresh decision for a new enrolment.
+ * stand           — a validated decision for this (existing) enrolment, with
+ *                   no relevant course change: kept as it is. Time passing
+ *                   and routine repeated events never reopen it.
+ * resolve_hold    — held for review earlier: re-checked as at the original
+ *                   decision time, so it can proceed once the cause is fixed.
+ * recheck_existing — recorded before validity checks, or the course changed
+ *                   since: re-checked as at the original decision time;
+ *                   anything that no longer passes is held for review, never
+ *                   reassessed automatically.
+ * Until exact enrolment identification exists, a repeated event for the same
+ * contact, modules and course is treated as the same enrolment.
  */
-export function planForPreviousLog(log: PreviousLog | null, now: Date, fingerprint: string): { recheck: boolean; reason: string } {
-  if (!log) return { recheck: true, reason: "first sync" };
-  if (log.status === "review_required") return { recheck: true, reason: "held for review" };
-  if (!log.validated_at) return { recheck: true, reason: "recorded before validity checks" };
-  if (log.validity_fingerprint !== fingerprint) return { recheck: true, reason: "validity policy or course requirements changed" };
-  for (const c of log.validity_checks ?? []) {
-    const until = parseCompletionDate(c?.valid_until ?? null);
-    if (until && now.getTime() >= until.getTime()) return { recheck: true, reason: "a relied-on result has expired" };
-    const by = parseCompletionDate(c?.recheck_by ?? null);
-    if (by && now.getTime() >= by.getTime()) return { recheck: true, reason: "the course mapping is due for review" };
-  }
-  return { recheck: false, reason: "validated and unchanged" };
+export type PlanMode = "new" | "stand" | "resolve_hold" | "recheck_existing";
+
+export function planForPreviousLog(log: PreviousLog | null, now: Date, fingerprint: string): { mode: PlanMode; asOf: Date; reason: string } {
+  if (!log) return { mode: "new", asOf: now, reason: "no previous decision for this enrolment" };
+  const original = parseCompletionDate(log.decision_at) ?? parseCompletionDate(log.created_at) ?? now;
+  const asOf = original.getTime() > now.getTime() ? now : original;
+  if (log.status === "review_required") return { mode: "resolve_hold", asOf, reason: "held for review" };
+  if (!log.validated_at) return { mode: "recheck_existing", asOf, reason: "recorded before validity checks" };
+  if (log.validity_fingerprint !== fingerprint) return { mode: "recheck_existing", asOf, reason: "the course, its mapping approval or its ACSF levels changed" };
+  return { mode: "stand", asOf, reason: "validated for this enrolment" };
 }
 
 /**
@@ -353,7 +441,9 @@ export function isOwnDecision(d: Decision, previous: Map<AssessmentType, string>
 export function outcomeSignature(decisions: Decision[]): string {
   return decisions
     .filter((d) => d.action !== "none")
-    .map((d) => `${d.type}:${d.action}:${d.invitationId ?? ""}:${d.check?.status ?? ""}`)
+    // The enrolment's own completed assessment is identified by its
+    // invitation alone, so the passing of time never changes the outcome.
+    .map((d) => `${d.type}:${d.action}:${d.invitationId ?? ""}:${d.action === "completed" ? "" : d.check?.status ?? ""}`)
     .sort()
     .join("|");
 }
@@ -385,6 +475,8 @@ export function planAssessments(input: {
   digitalRequired: boolean;
   invitations: LearnerInvitation[];
   previousLog: PreviousLog | null;
+  mode: PlanMode;
+  asOf: Date;
   policy: ValidityPolicy;
   course: CourseContext;
   digitalPassMarks: Record<string, number | null>;
@@ -405,25 +497,19 @@ export function planAssessments(input: {
       sufficiency: type === "lln"
         ? checkLlnSufficiency(inv.lln_acsf_outcomes, input.course.requirements)
         : checkDigitalSufficiency(inv.digital_score, input.digitalPassMarks[inv.id] ?? null),
+      asOf: input.asOf,
       now: input.now,
     });
 
     if (required && own.has(type)) {
+      // The assessment issued for this enrolment. Its outcome stands: it is
+      // never reissued because time has passed or because it fell short —
+      // that is for the RTO to follow up.
       const ownId = own.get(type) as string;
       const inv = invitations.find((i) => i.id === ownId);
-      if (inv && inv[statusKey] !== "completed") {
-        decisions.push({ type, action: "active", invitationId: ownId, check: null });
-        continue;
-      }
       if (inv) {
-        // The assessment issued for this enrolment. A result below
-        // requirements is this enrolment's outcome (handled by the RTO), not
-        // a reason to reissue automatically. Expiry and unverifiable dates
-        // are still enforced.
-        const check = evaluate(inv);
-        if (check.status === "expired") decisions.push({ type, action: "sent", invitationId: null, check });
-        else if (check.status === "valid" || check.status === "insufficient") decisions.push({ type, action: "completed", invitationId: ownId, check });
-        else decisions.push({ type, action: "review", invitationId: ownId, check });
+        const open = inv[statusKey] !== "completed";
+        decisions.push({ type, action: open ? "active" : "completed", invitationId: ownId, check: open ? null : evaluate(inv) });
         continue;
       }
       // Own invitation no longer visible: decide afresh below.
@@ -433,7 +519,18 @@ export function planAssessments(input: {
       !!i[tokenKey] && i[statusKey] !== "completed");
     const latest = active ? null : latestCompletedResult(invitations, type, input.organisationId);
     const check = required && latest ? evaluate(latest) : null;
-    decisions.push(decide({ type, required, activeInvitationId: active?.id ?? null, latest, check }));
+    let decision = decide({ type, required, activeInvitationId: active?.id ?? null, latest, check });
+    // An existing enrolment is never reassessed automatically: a decision
+    // that no longer passes is held for the RTO to review.
+    if (input.mode === "recheck_existing" && decision.action === "sent") {
+      decision = {
+        type, action: "review", invitationId: latest?.id ?? null,
+        check: check
+          ? { ...check, status: "unverifiable", reason: `this enrolment was accepted earlier, but on re-checking ${check.reason}` }
+          : { status: "unverifiable", reason: "this enrolment was accepted earlier, but no supporting result could be found on re-checking", completedAt: null, validUntil: null, validityDays: null, sufficiencyDetail: null },
+      };
+    }
+    decisions.push(decision);
   }
   return decisions;
 }
