@@ -90,3 +90,49 @@ export async function isIntegrationStaff(
     && context?.organisationId === integrationOrganisationId
     && hasAnyWorkspace(context, allowed);
 }
+
+export type OrganisationEmailProfile = {
+  // deno-lint-ignore no-explicit-any
+  branding: Record<string, any>;
+  // deno-lint-ignore no-explicit-any
+  emailSettings: Record<string, any>;
+  // deno-lint-ignore no-explicit-any
+  notificationSettings: Record<string, any>;
+};
+
+const emptyEmailProfile = (): OrganisationEmailProfile => ({ branding: {}, emailSettings: {}, notificationSettings: {} });
+
+/**
+ * One RTO's own branding, email and notification settings (Issue #40).
+ * Unknown or missing organisations get empty settings, so callers fall back to
+ * neutral defaults instead of another RTO's branding.
+ */
+export async function getOrganisationEmailProfile(
+  organisationId: string | null | undefined,
+  service: SupabaseClient = serviceClient(),
+): Promise<OrganisationEmailProfile> {
+  const profile = emptyEmailProfile();
+  if (!organisationId) return profile;
+  const { data } = await service
+    .from("organisation_settings")
+    .select("key, value")
+    .eq("organisation_id", organisationId)
+    .in("key", ["org_branding", "email_settings", "notification_settings"]);
+  for (const row of (data ?? []) as Array<{ key: string; value: unknown }>) {
+    const value = row.value && typeof row.value === "object" ? row.value as Record<string, unknown> : {};
+    if (row.key === "org_branding") profile.branding = value;
+    if (row.key === "email_settings") profile.emailSettings = value;
+    if (row.key === "notification_settings") profile.notificationSettings = value;
+  }
+  return profile;
+}
+
+/** Caches organisation email profiles for batch jobs that span several RTOs. */
+export function createEmailProfileCache(service: SupabaseClient = serviceClient()) {
+  const cache = new Map<string, Promise<OrganisationEmailProfile>>();
+  return (organisationId: string | null | undefined): Promise<OrganisationEmailProfile> => {
+    if (!organisationId) return Promise.resolve(emptyEmailProfile());
+    if (!cache.has(organisationId)) cache.set(organisationId, getOrganisationEmailProfile(organisationId, service));
+    return cache.get(organisationId)!;
+  };
+}

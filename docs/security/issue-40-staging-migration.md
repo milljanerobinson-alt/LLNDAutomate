@@ -63,7 +63,9 @@ be applied after `20261028120000_issue040_conditional_staff_deletion.sql`. It:
   number/state, aXcelerate watch list and auto-sync) into `organisation_settings`;
 - makes the platform `settings` table server-only, except the non-secret
   `environment` key;
-- bills each completed assessment to the candidate's own RTO subscription.
+- bills each completed assessment to the candidate's own RTO subscription;
+- stamps server-written email/aXcelerate queue and log rows with the related
+  invitation's RTO (previously these server inserts were refused).
 
 Legacy rows (created before organisations existed) are assigned to one legacy
 organisation. If exactly one organisation exists it is used automatically. If
@@ -93,7 +95,8 @@ Deploy these Edge Functions after the migration (they read the new columns and
 `compute-acsf-mapping`, `import-axcelerate-qualifications`,
 `process-axcelerate-queue`, `save-axcelerate-secrets`, `save-stripe-key`,
 `stripe-checkout`, `stripe-portal`, `stripe-webhook`,
-`test-axcelerate-connection` and `upload-axcelerate-portfolio`.
+`test-axcelerate-connection`, `upload-axcelerate-portfolio`, `send-email`,
+`on-assessment-complete`, `process-email-queue` and `send-admin-otp`.
 
 `stripe-webhook` now refuses events unless `STRIPE_WEBHOOK_SECRET` is configured
 and Stripe's signature is valid.

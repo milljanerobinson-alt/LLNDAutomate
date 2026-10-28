@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getOrganisationEmailProfile } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -255,15 +256,16 @@ Deno.serve(async (req: Request) => {
     }
 
     // Admin notification email
-    const { data: settingsRows } = await supabase
-      .from("settings")
-      .select("key, value")
-      .in("key", ["org_branding", "email_settings", "RESEND_API_KEY"]);
+    // Issue #40: the candidate's own RTO's branding and contact address.
+    const [organisationProfile, { data: settingsRows }] = await Promise.all([
+      getOrganisationEmailProfile(inv.organisation_id, supabase),
+      supabase.from("settings").select("key, value").in("key", ["RESEND_API_KEY"]),
+    ]);
     const settings: Record<string, any> = {};
     (settingsRows || []).forEach((s: any) => { settings[s.key] = s.value; });
 
-    const orgName: string = settings.org_branding?.name || "LLND Automate";
-    const adminEmail: string = settings.org_branding?.contact_email || "";
+    const orgName: string = organisationProfile.branding.name || "LLND Automate";
+    const adminEmail: string = organisationProfile.branding.contact_email || "";
     const RESEND_API_KEY: string = Deno.env.get("RESEND_API_KEY") || (typeof settings["RESEND_API_KEY"] === "string" ? settings["RESEND_API_KEY"] : "");
     const portalBase = Deno.env.get("SITE_URL") || "https://app.example.com";
     const qualName = inv.qualification ? `${inv.qualification.code} ${inv.qualification.name}` : "N/A";

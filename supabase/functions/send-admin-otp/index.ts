@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getOrganisationEmailProfile } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -78,15 +79,19 @@ Deno.serve(async (req: Request) => {
     });
 
     // Fetch branding + email key
-    const { data: settingsData } = await serviceClient
-      .from("settings")
-      .select("key, value")
-      .in("key", ["org_branding", "RESEND_API_KEY"]);
+    // Issue #40: the user's own RTO branding; the email provider key is platform configuration.
+    const { data: membership } = await serviceClient
+      .from("organisation_memberships").select("organisation_id")
+      .eq("user_id", user.id).eq("status", "active").maybeSingle();
+    const [organisationProfile, { data: settingsData }] = await Promise.all([
+      getOrganisationEmailProfile(membership?.organisation_id, serviceClient),
+      serviceClient.from("settings").select("key, value").in("key", ["RESEND_API_KEY"]),
+    ]);
 
     const settings: Record<string, any> = {};
     settingsData?.forEach((s: any) => { settings[s.key] = s.value; });
 
-    const orgName: string = settings.org_branding?.name || "LLND Automate";
+    const orgName: string = organisationProfile.branding.name || "LLND Automate";
     const RESEND_API_KEY: string | undefined =
       Deno.env.get("RESEND_API_KEY") ||
       (typeof settings["RESEND_API_KEY"] === "string" ? settings["RESEND_API_KEY"] : undefined);

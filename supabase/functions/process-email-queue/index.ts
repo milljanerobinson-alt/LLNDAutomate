@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createEmailProfileCache, getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -188,6 +189,8 @@ Deno.serve(async (req: Request) => {
       isCronCall = row?.value === cronSecret || row?.value?.toString() === cronSecret;
     }
 
+    // Issue #40: a signed-in staff member may only process their own RTO's emails.
+    let callerOrganisationId: string | null = null;
     if (!isServiceCall && !isCronCall) {
       const anonClient = createClient(
         Deno.env.get("SUPABASE_URL")!,
@@ -201,13 +204,14 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const { data: profile } = await anonClient.from("profiles").select("role").eq("id", user.id).maybeSingle();
-      if (!profile || !["admin", "trainer"].includes(profile.role)) {
+      const staff = await getStaffContext(authHeader);
+      if (!hasAnyWorkspace(staff, ["administration", "candidate_support", "technical"])) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      callerOrganisationId = staff!.organisationId;
     }
 
     // Parse optional body params
@@ -220,32 +224,41 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Load org settings
+    // Platform email provider key; branding and email preferences are per RTO (Issue #40).
     const { data: settingsRows } = await supabase
       .from("settings")
       .select("key, value")
-      .in("key", ["org_branding", "email_settings", "RESEND_API_KEY"]);
+      .in("key", ["RESEND_API_KEY"]);
 
     const settings: Record<string, any> = {};
     (settingsRows || []).forEach((s: any) => { settings[s.key] = s.value; });
 
-    const orgName: string = settings.org_branding?.name || "LLND Automate Assessment Platform";
-    const adminEmail: string = settings.org_branding?.contact_email || "";
-    const emailSettings: Record<string, any> = settings.email_settings || {};
+    const emailProfileFor = createEmailProfileCache(supabase);
+    const brandingFor = async (organisationId: string | null | undefined) => {
+      const profile = await emailProfileFor(organisationId);
+      return {
+        orgName: (profile.branding.name as string) || "LLND Automate Assessment Platform",
+        adminEmail: (profile.branding.contact_email as string) || "",
+        emailSettings: profile.emailSettings,
+      };
+    };
 
     const RESEND_API_KEY: string =
       Deno.env.get("RESEND_API_KEY") ||
       (typeof settings["RESEND_API_KEY"] === "string" ? settings["RESEND_API_KEY"] : "");
 
     // --- Step 1: Auto-detect completed invitations missing completion emails ---
-    const { data: completedInvs } = await supabase
+    let completedQuery = supabase
       .from("assessment_invitations")
-      .select("id, candidate_name, candidate_email, qualification_id, completed_at")
+      .select("id, organisation_id, candidate_name, candidate_email, qualification_id, completed_at")
       .eq("status", "completed")
       .not("completed_at", "is", null);
+    if (callerOrganisationId) completedQuery = completedQuery.eq("organisation_id", callerOrganisationId);
+    const { data: completedInvs } = await completedQuery;
 
     if (completedInvs && completedInvs.length > 0) {
       for (const inv of completedInvs) {
+        const { orgName, adminEmail, emailSettings } = await brandingFor(inv.organisation_id);
         // Check if completion_admin email already exists for this invitation
         const { data: existing } = await supabase
           .from("email_queue")
@@ -284,6 +297,7 @@ Deno.serve(async (req: Request) => {
           if (emailSettings.send_completion_admin !== false && adminEmail) {
             await supabase.from("email_queue").insert({
               invitation_id: inv.id,
+              organisation_id: inv.organisation_id,
               email_type: "completion_admin",
               recipient_email: adminEmail,
               recipient_name: `${orgName} Team`,
@@ -297,6 +311,7 @@ Deno.serve(async (req: Request) => {
           if (emailSettings.send_completion_student === true) {
             await supabase.from("email_queue").insert({
               invitation_id: inv.id,
+              organisation_id: inv.organisation_id,
               email_type: "completion_student",
               recipient_email: inv.candidate_email,
               recipient_name: inv.candidate_name,
@@ -326,7 +341,7 @@ Deno.serve(async (req: Request) => {
     // --- Step 3: Load due queue items ---
     let queueQuery = supabase
       .from("email_queue")
-      .select("*, assessment_invitations!inner(id, status, unique_token, lln_token, digital_token, qualification_id)")
+      .select("*, assessment_invitations!inner(id, organisation_id, status, unique_token, lln_token, digital_token, qualification_id)")
       .in("status", ["pending", "failed"])
       .lte("scheduled_at", new Date().toISOString())
       .lt("attempts", MAX_ATTEMPTS)
@@ -334,6 +349,7 @@ Deno.serve(async (req: Request) => {
       .order("scheduled_at", { ascending: true })
       .limit(specificQueueId ? 1 : BATCH_SIZE);
 
+    if (callerOrganisationId) queueQuery = queueQuery.eq("organisation_id", callerOrganisationId);
     if (specificQueueId) {
       queueQuery = queueQuery.eq("id", specificQueueId);
     } else if (invitationId) {
@@ -351,6 +367,7 @@ Deno.serve(async (req: Request) => {
 
     for (const item of items) {
       const inv = item.assessment_invitations as any;
+      const { orgName, emailSettings } = await brandingFor(item.organisation_id ?? inv?.organisation_id);
 
       // Suppress reminders if invitation is completed
       if (

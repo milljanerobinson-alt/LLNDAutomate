@@ -474,3 +474,28 @@ describe('Issue #40 Product Owner refinement — organisation-scoped Administrat
     expect(fn('save-stripe-key')).toContain('isIntegrationStaff(req.headers.get("Authorization"), ["administration"])');
   });
 });
+
+describe('Issue #40 — emails and Technical logs use the owning RTO', () => {
+  it('brands and configures emails from the RTO\'s own settings, not the platform table', () => {
+    for (const name of ['send-email', 'on-assessment-complete', 'process-email-queue', 'send-admin-otp']) {
+      const source = fn(name);
+      expect(source).toMatch(/getOrganisationEmailProfile|createEmailProfileCache/);
+      expect(source).not.toMatch(/\.in\("key", \[[^\]]*"(org_branding|email_settings|notification_settings)"/);
+    }
+    expect(organisationAccess).toContain('.from("organisation_settings")');
+  });
+  it('lets staff send or process emails only for their own RTO', () => {
+    expect(fn('send-email')).toContain('invitationOrg.organisation_id !== auth.organisationId');
+    expect(fn('send-email')).not.toMatch(/\["admin", "trainer"\]\.includes/);
+    expect(fn('process-email-queue')).toContain('if (callerOrganisationId) queueQuery = queueQuery.eq("organisation_id", callerOrganisationId);');
+    expect(fn('process-email-queue')).toContain('organisation_id: inv.organisation_id,');
+  });
+  it('stamps server-written logs and queues with the related invitation\'s RTO', () => {
+    const trigger = dataScoping.slice(dataScoping.indexOf('CREATE OR REPLACE FUNCTION public.set_diagnostic_organisation()'));
+    expect(trigger).toContain("to_jsonb(NEW) ->> 'invitation_id'");
+    expect(trigger).toContain("RAISE EXCEPTION 'diagnostic organisation does not match the invitation'");
+    expect(trigger).toContain("RAISE EXCEPTION 'cross-organisation diagnostic write denied'");
+    expect(trigger).toContain("RAISE EXCEPTION 'diagnostic organisation cannot be resolved safely'");
+  });
+});
+

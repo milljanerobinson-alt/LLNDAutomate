@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { getOrganisationEmailProfile, getStaffContext, hasAnyWorkspace } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,28 +11,9 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const VALID_NOTIFICATION_TYPES = ["sent", "reminder", "completed", "overdue", "trainer_review", "intervention", "support_plan"];
 
 async function verifyAuth(req: Request) {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) return null;
-
-  const token = authHeader.replace("Bearer ", "");
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } }
-  );
-
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
-
-  return { user, role: profile.role };
+  // Issue #40: any active staff member of an RTO (previously role admin/trainer).
+  const context = await getStaffContext(req.headers.get("Authorization"));
+  return hasAnyWorkspace(context, ["administration", "candidate_support", "technical"]) ? context : null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -77,16 +59,30 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: settingsData } = await supabase
-      .from("settings")
-      .select("key, value")
-      .in("key", ["org_branding", "notification_settings", "RESEND_API_KEY"]);
+    // Issue #40: email on behalf of the caller's own RTO only.
+    if (invitation_id) {
+      const { data: invitationOrg } = await supabase
+        .from("assessment_invitations").select("organisation_id").eq("id", invitation_id).maybeSingle();
+      if (!invitationOrg || invitationOrg.organisation_id !== auth.organisationId) {
+        return new Response(JSON.stringify({ error: "Invitation not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Branding and notification preferences belong to the RTO; the email
+    // provider key is platform configuration.
+    const [organisationProfile, { data: settingsData }] = await Promise.all([
+      getOrganisationEmailProfile(auth.organisationId, supabase),
+      supabase.from("settings").select("key, value").in("key", ["RESEND_API_KEY"]),
+    ]);
 
     const settings: Record<string, any> = {};
     settingsData?.forEach((s) => { settings[s.key] = s.value; });
 
-    const orgName = settings.org_branding?.name || "LLND Automate";
-    const notifSettings = settings.notification_settings || {};
+    const orgName = organisationProfile.branding.name || "LLND Automate";
+    const notifSettings = organisationProfile.notificationSettings;
 
     if (notifSettings[type] === false) {
       return new Response(JSON.stringify({ message: "Notification type disabled" }), {

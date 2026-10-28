@@ -25,6 +25,10 @@ Status: implemented on `feature/issue-40-rto-workspace-access`; awaiting staging
 - only that RTO's Administration or Technical users can use or change the connection;
 - other RTOs' candidates are never sent to it.
 
+**Emails.** Invitation, reminder, completion and sign-in-code emails use each RTO's own name, contact address and email preferences.
+
+**Background jobs.** Completion processing, the email queue and aXcelerate jobs could not record their queue and log entries once the first issue 40 database change was applied. Each entry now belongs to the related candidate's RTO.
+
 ## What does not change
 
 - Candidates still use their assessment links, and nothing changes for them.
@@ -33,7 +37,6 @@ Status: implemented on `feature/issue-40-rto-workspace-access`; awaiting staging
 
 ## Known limits (follow-on work)
 
-- Emails and aXcelerate write-backs still use the original RTO's branding and email settings for every RTO.
 - A second RTO can't yet connect its own aXcelerate account. Automatic aXcelerate sync can't create candidates for any RTO while more than one RTO exists.
 - Some EIOS engineering screens can no longer read secrets in the browser. The "startup catch-up" for scheduled briefings and the "configured keys" indicator will show nothing until those screens use a server check.
 

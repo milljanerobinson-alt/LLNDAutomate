@@ -20,6 +20,9 @@
       Administration users. Billable completions are recorded against the
       candidate's own organisation's subscription instead of the newest
       subscription on the platform.
+   5. Server-written Technical logs and queues (email queue, aXcelerate
+      write-back queue and sync logs) take their organisation from the related
+      invitation, so server jobs no longer fail the base Issue #40 trigger.
 
    Server compatibility bridge (temporary, until aXcelerate/email server
    functions are made organisation-aware): Edge Functions still read
@@ -407,5 +410,50 @@ BEGIN
 END;
 $$;
 REVOKE EXECUTE ON FUNCTION public.record_billable_completion(uuid, text, text, text) FROM PUBLIC, anon, authenticated;
+
+-- ── 6. Technical logs and queues: owning organisation for server writes ────
+-- The base Issue #40 trigger took the organisation only from the signed-in
+-- user. Server jobs (completion processing, email queue, aXcelerate sync) have
+-- no signed-in user, so their inserts into these tables were refused. A row
+-- for an invitation now belongs to that invitation's organisation; a server
+-- row without an invitation (aXcelerate inbound activity) belongs to the RTO
+-- that owns the platform aXcelerate integration, or the only RTO.
+CREATE OR REPLACE FUNCTION public.set_diagnostic_organisation()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE
+  invitation_ref text := to_jsonb(NEW) ->> 'invitation_id';
+  invitation_org uuid;
+  caller_org uuid;
+BEGIN
+  IF invitation_ref IS NOT NULL THEN
+    SELECT i.organisation_id INTO invitation_org
+    FROM public.assessment_invitations i WHERE i.id = invitation_ref::uuid;
+  END IF;
+  IF auth.uid() IS NOT NULL THEN
+    caller_org := public.current_organisation_id();
+    IF caller_org IS NULL THEN RAISE EXCEPTION 'active organisation membership required'; END IF;
+  END IF;
+
+  NEW.organisation_id := coalesce(NEW.organisation_id, invitation_org, caller_org);
+  IF NEW.organisation_id IS NULL AND auth.uid() IS NULL THEN
+    SELECT nullif(s.value #>> '{}', '')::uuid INTO NEW.organisation_id
+    FROM public.settings s WHERE s.key = 'legacy_server_settings_organisation_id';
+    IF NEW.organisation_id IS NULL AND (SELECT count(*) FROM public.organisations) = 1 THEN
+      NEW.organisation_id := (SELECT id FROM public.organisations);
+    END IF;
+  END IF;
+
+  IF NEW.organisation_id IS NULL THEN
+    RAISE EXCEPTION 'diagnostic organisation cannot be resolved safely';
+  END IF;
+  IF invitation_org IS NOT NULL AND NEW.organisation_id <> invitation_org THEN
+    RAISE EXCEPTION 'diagnostic organisation does not match the invitation';
+  END IF;
+  IF caller_org IS NOT NULL AND NEW.organisation_id <> caller_org THEN
+    RAISE EXCEPTION 'cross-organisation diagnostic write denied';
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.set_diagnostic_organisation() FROM PUBLIC, anon, authenticated;
 
 COMMIT;
