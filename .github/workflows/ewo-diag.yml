@@ -1,0 +1,51 @@
+# Temporary diagnostics run (throwaway ewo/diag-* branch only; never merged).
+name: EWO Verification
+on:
+  push:
+    branches: ['ewo/**']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - name: Checks
+        shell: bash
+        run: |
+          set +e
+          enc() { python3 -c 'import sys; d=sys.stdin.read()[-3500:]; print(d.replace("%","%25").replace("\r","").replace("\n","%0A"))'; }
+          FAILS=""
+          for f in ai-health-check ai-playground-execute analyze-conversations analyze-error architecture-guardian atd-connect-bridge atd-conversation-gateway atd-engineering-draft atd-mcp-server atd-reasoning codex-dry-run codex-execute codex-health-check command-centre-ai create-engineering-work-order engineering-intelligence engineering-knowledge-extraction engineering-review generate-engineering-briefing generate-platform-audit github-bootstrap github-operations governed-acceptance lifecycle-reconciliation operator-support post-acceptance-pipeline prepare-execution-request repository-operations resolve-conversation-intent save-codex-credential save-email-secret save-llm-secret save-provider-key save-stripe-key technical-director test-ai-provider-connection ; do
+            DENO_NO_PACKAGE_JSON=1 deno check --node-modules-dir=none supabase/functions/$f/index.ts > d.txt 2>&1; RC=$?
+            if [ $RC -ne 0 ]; then
+              FAILS="$FAILS $f"
+              { echo "exit=$RC"; sed 's/\x1b\[[0-9;]*m//g' d.txt | grep -E 'TS[0-9]+ \[ERROR\]|^ +at file|error:' | sed -E 's#.*/supabase/functions/##' | head -20; } > d.sum
+              echo "::notice title=DENO $f::$(enc < d.sum)"
+            fi
+          done
+          echo "::notice title=DENO_SUMMARY::failed:${FAILS:- none}"
+          for t in issue045_platform_operator_access issue040_rto_workspace_access ewo033_security_regression; do
+            npx vitest run src/tests/$t.test.ts > v.txt 2>&1; V=$?
+            sed -i 's/\x1b\[[0-9;]*m//g' v.txt
+            { echo "exit=$V"; grep -E '^ *(Test Files|Tests) |FAIL|AssertionError|Error:' v.txt | head -n 25; } > v.sum
+            echo "::notice title=TEST $t::$(enc < v.sum)"
+          done
+          npx vitest run > vitest.txt 2>&1; V=$?
+          sed -i 's/\x1b\[[0-9;]*m//g' vitest.txt
+          { echo "exit=$V"; grep -E '^ *(Test Files|Tests) ' vitest.txt; grep -E '^ FAIL ' vitest.txt | sed -E 's/ >.*//' | sort -u | head -100; } > vitest.sum
+          python3 -c 'import sys; d=open("vitest.sum").read(); print("::notice title=UNIT_TESTS::"+d[:4000].replace("%","%25").replace("\n","%0A"))'
+          npx tsc --noEmit > tsc.txt 2>&1; TC=$?
+          { echo "exit=$TC errors=$(grep -c 'error TS' tsc.txt)"; grep -E 'src/(lib/platformOperator|components/operator|pages/operator|components/WorkspaceSwitcher|components/EngineeringLayout|pages/workspace/OrganisationPage|App\.tsx|tests/issue045)' tsc.txt | head -20; } > tsc.sum
+          echo "::notice title=TYPECHECK::$(enc < tsc.sum)"
+          npx tsc --noEmit -p tsconfig.app.json > tsc2.txt 2>&1; echo "::notice title=TYPECHECK_APP::exit=$? errors=$(grep -c 'error TS' tsc2.txt)"
+          npx vite build > build.txt 2>&1; echo "::notice title=BUILD::exit=$? $(tail -3 build.txt | tr '\n' ' ' | cut -c1-300)"
+          npx playwright install --with-deps chromium > pw.txt 2>&1
+          npx playwright test --list --project=operator-chromium > list.txt 2>&1; echo "::notice title=OPERATOR_SPEC_LIST::exit=$? $(tail -2 list.txt | tr '\n' ' ' | cut -c1-300)"
+          true
