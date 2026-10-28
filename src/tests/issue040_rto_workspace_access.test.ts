@@ -505,7 +505,9 @@ describe('Issue #40 — candidate ownership for server-created candidates', () =
     const unscoped = [...inbound.matchAll(/\.from\("(students|enrolments|assessment_invitations|qualifications)"\)\s*\.(select|update)\(/g)]
       .filter(m => !inbound.slice(m.index!, m.index! + 400).includes('.eq("organisation_id", INTEGRATION_ORGANISATION_ID)'));
     expect(unscoped).toEqual([]);
-    expect(inbound.match(/organisation_id: INTEGRATION_ORGANISATION_ID,/g)).toHaveLength(3);
+    // students, enrolments and invitations inserts, plus the inbound-sync log
+    // upsert (assessment-result validity), all name the integration RTO.
+    expect(inbound.match(/organisation_id: INTEGRATION_ORGANISATION_ID,/g)).toHaveLength(4);
     expect(inbound).toContain('INTEGRATION_ORGANISATION_ID = integrationOrganisationId;');
   });
   it('lets a trusted server name the owning RTO and never lets users cross RTOs', () => {

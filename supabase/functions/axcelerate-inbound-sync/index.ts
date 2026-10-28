@@ -1,5 +1,10 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
+import {
+  VALIDITY_SETTING_KEY, buildInboundNote, escapeLike, latestCompletedResult, matchStudent, outcomeSignature,
+  parseValidityPolicy, planAssessments, planForPreviousLog, shouldWriteNote,
+  type AssessmentType, type Decision, type QualificationRequirement, type StudentRow,
+} from "../_shared/result-validity.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +13,6 @@ const corsHeaders = {
 };
 
 const DEFAULT_MIN_ACSF = 2;
-const DEFAULT_DIGITAL_PASS = 50;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -235,79 +239,38 @@ async function fetchContactEnrolments(
   return { hasActiveEnrolment: true, courseId: null, qualCode: null, checked: false };
 }
 
-// ── ACSF sufficiency check ───────────────────────────────────────────────────
-
-function isLlnSufficient(
-  llnAcsfOutcomes: Record<string, number> | null,
-  requirements: { domain: string; minimum_acsf_level: number }[],
-): boolean {
-  if (!llnAcsfOutcomes || Object.keys(llnAcsfOutcomes).length === 0) return false;
-  if (requirements.length === 0) {
-    // No specific requirements: pass if any outcomes recorded
-    return Object.values(llnAcsfOutcomes).some((v) => v >= DEFAULT_MIN_ACSF);
-  }
-  for (const req of requirements) {
-    const achieved = llnAcsfOutcomes[req.domain.toLowerCase()] ?? 0;
-    if (achieved < req.minimum_acsf_level) return false;
-  }
-  return true;
-}
-
-function isDigitalSufficient(digitalScore: number | null): boolean {
-  return digitalScore !== null && digitalScore >= DEFAULT_DIGITAL_PASS;
-}
-
 // ── Student record helpers ────────────────────────────────────────────────────
 
-async function findOrCreateStudent(
+// Exact, organisation-scoped student matching (see _shared/result-validity.ts).
+async function resolveStudent(
   supabase: any,
-  params: {
-    firstName: string;
-    lastName: string;
-    dob: string | null;
-    email: string | null;
-    axcelerateContactId: number;
-  },
-): Promise<string> {
+  params: { firstName: string; lastName: string; dob: string | null; email: string | null; axcelerateContactId: number },
+): Promise<{ kind: "matched" | "created"; id: string } | { kind: "ambiguous"; reason: string }> {
   const { firstName, lastName, dob, email, axcelerateContactId } = params;
+  const cols = "id, organisation_id, axcelerate_contact_id, first_name, last_name, date_of_birth, email";
+  const queries = [
+    supabase.from("students").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("axcelerate_contact_id", axcelerateContactId).limit(5),
+  ];
+  if (dob) queries.push(supabase.from("students").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("date_of_birth", dob).limit(50));
+  if (email) queries.push(supabase.from("students").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).ilike("email", escapeLike(email.trim())).limit(20));
+  const results = await Promise.all(queries);
+  const failed = results.find((r: any) => r.error);
+  if (failed) throw new Error(`Student lookup failed: ${failed.error.message}`);
+  const byId = new Map<string, StudentRow>();
+  for (const r of results) for (const row of (r.data ?? []) as StudentRow[]) byId.set(row.id, row);
 
-  // Primary: match by axcelerate contact ID
-  const { data: byContactId } = await supabase
-    .from("students")
-    .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-    .eq("axcelerate_contact_id", axcelerateContactId)
-    .maybeSingle();
-  if (byContactId) return byContactId.id;
-
-  // Secondary: DOB + name match
-  if (dob) {
-    const { data: byDob } = await supabase
-      .from("students")
-      .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-      .eq("date_of_birth", dob)
-      .ilike("first_name", firstName)
-      .ilike("last_name", lastName)
-      .maybeSingle();
-    if (byDob) {
-      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", byDob.id);
-      return byDob.id;
+  const match = matchStudent([...byId.values()], {
+    organisationId: INTEGRATION_ORGANISATION_ID, contactId: axcelerateContactId, firstName, lastName, dob, email,
+  });
+  if (match.kind === "ambiguous") return match;
+  if (match.kind === "matched") {
+    if (match.linkContact) {
+      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId })
+        .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", match.id).is("axcelerate_contact_id", null);
     }
+    return { kind: "matched", id: match.id };
   }
 
-  // Tertiary: email
-  if (email) {
-    const { data: byEmail } = await supabase
-      .from("students")
-      .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-      .ilike("email", email)
-      .maybeSingle();
-    if (byEmail) {
-      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", byEmail.id);
-      return byEmail.id;
-    }
-  }
-
-  // Create new
   const { data: created, error } = await supabase
     .from("students")
     .insert({
@@ -321,9 +284,45 @@ async function findOrCreateStudent(
     })
     .select("id")
     .single();
-
   if (error) throw new Error(`Failed to create student: ${error.message}`);
-  return created.id;
+  return { kind: "created", id: created.id };
+}
+
+// Invitations that belong to this learner within the RTO: linked by student,
+// by aXcelerate contact, or (legacy rows with neither) by exact name + DOB.
+async function learnerInvitations(
+  supabase: any,
+  params: { studentId: string; contactId: number; fullName: string; dob: string | null },
+): Promise<any[]> {
+  const cols = "id, organisation_id, status, lln_status, digital_status, lln_token, digital_token, lln_completed_at, digital_completed_at, completed_at, created_at, lln_acsf_outcomes, digital_score, qualification_id, student_id, axcelerate_contact_id";
+  const queries = [
+    supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("student_id", params.studentId).limit(50),
+    supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("axcelerate_contact_id", params.contactId).limit(50),
+  ];
+  if (params.dob && params.fullName.length > 2) {
+    queries.push(supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+      .is("student_id", null).is("axcelerate_contact_id", null)
+      .eq("candidate_dob", params.dob).ilike("candidate_name", escapeLike(params.fullName)).limit(20));
+  }
+  const results = await Promise.all(queries);
+  const failed = results.find((r: any) => r.error);
+  if (failed) throw new Error(`Invitation lookup failed: ${failed.error.message}`);
+  const byId = new Map<string, any>();
+  for (const r of results) for (const row of r.data ?? []) byId.set(row.id, row);
+  return [...byId.values()];
+}
+
+// Pass mark of the Digital assessment the candidate actually sat.
+async function digitalPassMark(supabase: any, invitationId: string): Promise<number | null> {
+  const { data } = await supabase
+    .from("invitation_assessments")
+    .select("assessments(type, pass_threshold)")
+    .eq("invitation_id", invitationId);
+  for (const row of data ?? []) {
+    const a = Array.isArray(row.assessments) ? row.assessments[0] : row.assessments;
+    if (a?.type === "digital" && typeof a.pass_threshold === "number") return a.pass_threshold;
+  }
+  return null;
 }
 
 async function findOrCreateEnrolment(
@@ -383,92 +382,6 @@ async function logLifecycleEvent(
 }
 
 
-
-async function findExistingLearner(
-  supabase: any,
-  firstName: string,
-  lastName: string,
-  dob: string | null,
-  email: string | null,
-): Promise<any | null> {
-  const fullName = `${firstName} ${lastName}`.trim();
-
-  // Primary match: DOB + first + last name
-  if (dob) {
-    const { data } = await supabase
-      .from("assessment_invitations")
-      .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-      .eq("candidate_dob", dob)
-      .ilike("candidate_name", `%${firstName}%`)
-      .ilike("candidate_name", `%${lastName}%`)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (data && data.length > 0) return data[0];
-  }
-
-  // Fallback: exact name match
-  if (fullName.length > 2) {
-    const { data } = await supabase
-      .from("assessment_invitations")
-      .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-      .ilike("candidate_name", fullName)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (data && data.length > 0) return data[0];
-  }
-
-  // Last fallback: email match
-  if (email) {
-    const { data } = await supabase
-      .from("assessment_invitations")
-      .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-      .ilike("candidate_email", email)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (data && data.length > 0) return data[0];
-  }
-
-  return null;
-}
-
-// ── Find best existing completed invitation for ACSF check ──────────────────
-
-async function findBestCompletedInvitation(
-  supabase: any,
-  firstName: string,
-  lastName: string,
-  dob: string | null,
-  email: string | null,
-  assessmentType: "lln" | "digital",
-): Promise<any | null> {
-  // Build a base query for completed invitations for this learner
-  let query = supabase
-    .from("assessment_invitations")
-    .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-    .eq("status", "completed")
-    .order("completed_at", { ascending: false })
-    .limit(10);
-
-  if (dob) {
-    query = query.eq("candidate_dob", dob);
-  } else if (email) {
-    query = query.ilike("candidate_email", email);
-  } else {
-    query = query.ilike("candidate_name", `%${firstName}%`).ilike("candidate_name", `%${lastName}%`);
-  }
-
-  const { data } = await query;
-  if (!data || data.length === 0) return null;
-
-  // Filter for the specific assessment type
-  return data.find((inv: any) => {
-    if (assessmentType === "lln") {
-      return inv.lln_status === "completed" && inv.lln_token;
-    } else {
-      return inv.digital_status === "completed" && inv.digital_token;
-    }
-  }) ?? null;
-}
 
 // ── Create invitation ────────────────────────────────────────────────────────
 
@@ -636,58 +549,6 @@ async function queueInvitationEmails(
     onConflict: "idempotency_key",
     ignoreDuplicates: true,
   });
-}
-
-// ── Build contact note ────────────────────────────────────────────────────────
-
-function buildInboundNote(params: {
-  contactName: string;
-  contactEmail: string;
-  qualName: string;
-  llnAction: "sent" | "active" | "existing" | "none";
-  digitalAction: "sent" | "active" | "existing" | "none";
-  llnInsufficientAcsf?: boolean;
-  digitalInsufficientAcsf?: boolean;
-  timezone?: string;
-}): string {
-  const lines: string[] = ["LLND Automate PORTAL ASSESSMENT SYNC"];
-  lines.push(`Contact: ${params.contactName}`);
-  lines.push(`Qualification: ${params.qualName}`);
-  lines.push(`Date: ${fmt(new Date().toISOString(), params.timezone)}`);
-
-  const outcomeLines: string[] = [];
-
-  if (params.llnAction === "sent") {
-    outcomeLines.push("- LLN Quiz: Invitation generated and sent.");
-    if (params.llnInsufficientAcsf) {
-      outcomeLines.push("  (Previous assessment found but did not meet qualification ACSF requirements.)");
-    }
-  } else if (params.llnAction === "active") {
-    outcomeLines.push("- LLN Quiz: Student already has an outstanding LLN assessment invitation in the LLND Automate Portal. No additional invitation has been issued.");
-  } else if (params.llnAction === "existing") {
-    outcomeLines.push("- LLN Quiz: Student already exists in the LLND Automate Portal with a current valid LLN assessment suitable for this qualification. No additional LLN assessment has been issued.");
-  }
-
-  if (params.digitalAction === "sent") {
-    outcomeLines.push("- Digital Skills Quiz: Invitation generated and sent.");
-    if (params.digitalInsufficientAcsf) {
-      outcomeLines.push("  (Previous assessment found but did not meet qualification pass threshold.)");
-    }
-  } else if (params.digitalAction === "active") {
-    outcomeLines.push("- Digital Skills Quiz: Student already has an outstanding Digital Skills assessment invitation in the LLND Automate Portal. No additional invitation has been issued.");
-  } else if (params.digitalAction === "existing") {
-    outcomeLines.push("- Digital Skills Quiz: Student already exists in the LLND Automate Portal with a current valid Digital Skills assessment suitable for this qualification. No additional Digital Skills assessment has been issued.");
-  }
-
-  if (outcomeLines.length > 0) {
-    lines.push("OUTCOME");
-    lines.push(...outcomeLines);
-  } else {
-    lines.push("OUTCOME");
-    lines.push("- No action required — no assessment fields marked as required.");
-  }
-
-  return lines.join("\n");
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -950,7 +811,7 @@ Deno.serve(async (req: Request) => {
     // ── 3. Look up qualification ────────────────────────────────────────────
     let qualificationId: string | null = null;
     let qualName = "N/A";
-    let requirements: { domain: string; minimum_acsf_level: number }[] = [];
+    let requirements: QualificationRequirement[] = [];
 
     const lookupQual = async (query: any) => {
       const { data: qual } = await query;
@@ -959,7 +820,7 @@ Deno.serve(async (req: Request) => {
       qualName = `${qual.code} ${qual.name}`;
       const { data: reqs } = await supabase
         .from("qualification_lln_requirements")
-        .select("domain, minimum_acsf_level")
+        .select("domain, acsf_skill, minimum_acsf_level")
         .eq("qualification_id", qual.id);
       requirements = reqs || [];
     };
@@ -1022,218 +883,134 @@ Deno.serve(async (req: Request) => {
     const { data: existingLog } = await supabase
       .from("axcelerate_inbound_sync_log")
       .select("*")
+      .eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
 
-    if (existingLog && ["created", "skipped"].includes(existingLog.status)) {
-      // For "created" records: verify the linked invitation still exists.
-      // The FK is ON DELETE SET NULL, so if invitations were cleared, invitation_id becomes
-      // null but status stays "created". Detect this and re-process rather than blocking.
-      if (existingLog.status === "created") {
-        let invitationGone = !existingLog.invitation_id;
-        if (!invitationGone && existingLog.invitation_id) {
-          const { data: existingInv } = await supabase
-            .from("assessment_invitations")
-            .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-            .eq("id", existingLog.invitation_id)
-            .maybeSingle();
-          invitationGone = !existingInv;
-        }
+    const now = new Date();
+    // Previously processed entries are re-checked unless they were validated
+    // under the result-validity rules (see planForPreviousLog).
+    let previousLog = existingLog ?? null;
 
-        if (invitationGone) {
-          // Stale log — invitation was deleted. Clear it and fall through to re-create.
-          await supabase
-            .from("axcelerate_inbound_sync_log")
-            .delete()
-            .eq("idempotency_key", idempotencyKey);
-        } else {
-          // Invitation exists. If email was missing on the previous run but we now have
-          // one, patch the invitation and re-queue the email.
-          if (email && existingLog.invitation_id) {
-            const { data: inv } = await supabase
-              .from("assessment_invitations")
-              .select("id, candidate_email, unique_token, lln_token, digital_token").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-              .eq("id", existingLog.invitation_id)
-              .maybeSingle();
-
-            if (inv && !inv.candidate_email && email) {
-              await supabase
-                .from("assessment_invitations")
-                .update({ candidate_email: email }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-                .eq("id", inv.id);
-
-              await supabase
-                .from("email_queue")
-                .update({ recipient_email: email, status: "pending", attempts: 0, last_error: null })
-                .eq("invitation_id", inv.id)
-                .in("status", ["failed", "pending"]);
-
-              await supabase
-                .from("axcelerate_inbound_sync_log")
-                .update({ contact_email: email })
-                .eq("id", existingLog.id);
-
-              fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/process-email-queue`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
-                },
-                body: JSON.stringify({ invitation_id: inv.id }),
-              }).catch(() => {});
-
-              return new Response(
-                JSON.stringify({
-                  message: "Email was missing — patched and re-queued",
-                  invitation_id: inv.id,
-                  email_patched: email,
-                }),
-                { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-              );
-            }
-          }
-
-          // Retry note write if it failed previously
-          if (!existingLog.note_written && existingLog.note_text) {
-            try {
-              const noteRes = await fetch(`${apiBaseUrl}/contact/note/`, {
-                method: "POST",
-                headers: axHdr,
-                body: new URLSearchParams({
-                  contactID: String(contactId),
-                  contactNote: existingLog.note_text,
-                }),
-              });
-              if (noteRes.ok) {
-                await supabase
-                  .from("axcelerate_inbound_sync_log")
-                  .update({ note_written: true })
-                  .eq("id", existingLog.id);
-              }
-              await supabase.from("axcelerate_sync_log").insert({
-                invitation_id: existingLog.invitation_id,
-                event_type: "inbound_sync",
-                sync_type: "note_retry",
-                request_payload: { contactID: contactId },
-                response_payload: await noteRes.json().catch(() => ({})),
-                status: noteRes.ok ? "success" : "failed",
-                error: noteRes.ok ? null : `HTTP ${noteRes.status}`,
-              });
-            } catch (_e) { /* non-fatal */ }
-          }
-
-          return new Response(
-            JSON.stringify({
-              message: "Already processed",
-              idempotency_key: idempotencyKey,
-              status: existingLog.status,
-              log_id: existingLog.id,
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-      } else {
-        // "skipped" — no invitation to verify, just return early
-        return new Response(
-          JSON.stringify({
-            message: "Already processed",
-            idempotency_key: idempotencyKey,
-            status: existingLog.status,
-            log_id: existingLog.id,
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+    if (existingLog && existingLog.status === "created") {
+      // The FK is ON DELETE SET NULL: if the invitation was deleted, start again.
+      let invitationGone = !existingLog.invitation_id;
+      if (!invitationGone) {
+        const { data: existingInv } = await supabase
+          .from("assessment_invitations")
+          .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+          .eq("id", existingLog.invitation_id)
+          .maybeSingle();
+        invitationGone = !existingInv;
+      }
+      if (invitationGone) {
+        await supabase.from("axcelerate_inbound_sync_log").delete()
+          .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("idempotency_key", idempotencyKey);
+        previousLog = null;
       }
     }
 
-    // ── 5. Match existing learner ───────────────────────────────────────────
-    const existingLearner = await findExistingLearner(supabase, firstName, lastName, dob, email || null);
-
-    // Update axcelerate_contact_id on existing invitations for this learner if not set
-    if (existingLearner && !existingLearner.axcelerate_contact_id) {
-      await supabase
-        .from("assessment_invitations")
-        .update({ axcelerate_contact_id: contactId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-        .ilike("candidate_email", existingLearner.candidate_email);
-    }
-
-    // ── 6. Determine what assessments are needed ────────────────────────────
-    let llnAction: "sent" | "active" | "existing" | "none" = "none";
-    let digitalAction: "sent" | "active" | "existing" | "none" = "none";
-    let llnInsufficientAcsf = false;
-    let digitalInsufficientAcsf = false;
-    let llnInvitationId: string | null = null;
-    let digitalInvitationId: string | null = null;
-
-    // -- LLN --
-    if (llnRequired) {
-      // Check for an existing active (not completed) invitation for this learner + LLN
-      const { data: activeInv } = await supabase
-        .from("assessment_invitations")
-        .select("id, status, lln_status").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-        .ilike("candidate_email", email || existingLearner?.candidate_email || "__none__")
-        .in("status", ["sent", "opened", "in_progress"])
-        .not("lln_token", "is", null)
-        .maybeSingle();
-
-      if (activeInv) {
-        // Already has an active invitation pending — not yet completed
-        llnAction = "active";
-        llnInvitationId = activeInv.id;
-      } else {
-        // Check for a completed, sufficient assessment
-        const completed = await findBestCompletedInvitation(
-          supabase, firstName, lastName, dob, email || null, "lln",
-        );
-
-        if (completed) {
-          const outcomes = (completed.lln_acsf_outcomes as Record<string, number>) || {};
-          if (isLlnSufficient(outcomes, requirements)) {
-            llnAction = "existing";
-            llnInvitationId = completed.id;
-          } else {
-            llnInsufficientAcsf = true;
-          }
-        }
-
-        if (llnAction === "none") {
-          llnAction = "sent";
+    const plan = planForPreviousLog(previousLog, now);
+    if (previousLog && !plan.recheck && ["created", "skipped"].includes(previousLog.status)) {
+      // Validated earlier for this enrolment: keep the decision. Patch a
+      // missing email and retry a failed note, as before.
+      if (previousLog.status === "created" && email && previousLog.invitation_id) {
+        const { data: inv } = await supabase
+          .from("assessment_invitations")
+          .select("id, candidate_email").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+          .eq("id", previousLog.invitation_id)
+          .maybeSingle();
+        if (inv && !inv.candidate_email) {
+          await supabase.from("assessment_invitations").update({ candidate_email: email })
+            .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", inv.id);
+          await supabase.from("email_queue")
+            .update({ recipient_email: email, status: "pending", attempts: 0, last_error: null })
+            .eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+            .eq("invitation_id", inv.id).in("status", ["failed", "pending"]);
+          await supabase.from("axcelerate_inbound_sync_log").update({ contact_email: email })
+            .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", previousLog.id);
+          fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/process-email-queue`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}` },
+            body: JSON.stringify({ invitation_id: inv.id }),
+          }).catch(() => {});
+          return new Response(JSON.stringify({ message: "Email was missing — patched and re-queued", invitation_id: inv.id }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
-    }
-
-    // -- Digital --
-    if (digitalRequired) {
-      const { data: activeInv } = await supabase
-        .from("assessment_invitations")
-        .select("id, status, digital_status").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-        .ilike("candidate_email", email || existingLearner?.candidate_email || "__none__")
-        .in("status", ["sent", "opened", "in_progress"])
-        .not("digital_token", "is", null)
-        .maybeSingle();
-
-      if (activeInv) {
-        digitalAction = "active";
-        digitalInvitationId = activeInv.id;
-      } else {
-        const completed = await findBestCompletedInvitation(
-          supabase, firstName, lastName, dob, email || null, "digital",
-        );
-
-        if (completed) {
-          if (isDigitalSufficient(completed.digital_score)) {
-            digitalAction = "existing";
-            digitalInvitationId = completed.id;
-          } else {
-            digitalInsufficientAcsf = true;
+      if (!previousLog.note_written && previousLog.note_text) {
+        try {
+          const noteRes = await fetch(`${apiBaseUrl}/contact/note/`, {
+            method: "POST",
+            headers: axHdr,
+            body: new URLSearchParams({ contactID: String(contactId), contactNote: previousLog.note_text, noteTypeID: "88" }),
+          });
+          if (noteRes.ok) {
+            await supabase.from("axcelerate_inbound_sync_log").update({ note_written: true })
+              .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", previousLog.id);
           }
-        }
-
-        if (digitalAction === "none") {
-          digitalAction = "sent";
-        }
+          await supabase.from("axcelerate_sync_log").insert({
+            invitation_id: previousLog.invitation_id,
+            event_type: "inbound_sync",
+            sync_type: "note_retry",
+            request_payload: { contactID: contactId },
+            response_payload: await noteRes.json().catch(() => ({})),
+            status: noteRes.ok ? "success" : "failed",
+            error: noteRes.ok ? null : `HTTP ${noteRes.status}`,
+          });
+        } catch (_e) { /* non-fatal */ }
       }
+      return new Response(
+        JSON.stringify({ message: "Already processed", idempotency_key: idempotencyKey, status: previousLog.status, log_id: previousLog.id }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
+
+    // ── 5. Identify the student within this RTO ─────────────────────────────
+    const studentResult = await resolveStudent(supabase, {
+      firstName, lastName, dob, email: email || null, axcelerateContactId: contactId,
+    });
+
+    // ── 6. Decide each assessment ───────────────────────────────────────────
+    const { data: validityRow } = await supabase
+      .from("organisation_settings").select("value")
+      .eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("key", VALIDITY_SETTING_KEY).maybeSingle();
+    const validityPolicy = parseValidityPolicy(validityRow?.value);
+    let decisions: Decision[] = [];
+    let studentId: string | null = null;
+    let ambiguousReason: string | null = null;
+
+    if (studentResult.kind === "ambiguous") {
+      ambiguousReason = studentResult.reason;
+    } else {
+      studentId = studentResult.id;
+      const invitations = await learnerInvitations(supabase, { studentId, contactId, fullName, dob });
+      const digitalPassMarks: Record<string, number | null> = {};
+      if (digitalRequired) {
+        const latestDigital = latestCompletedResult(invitations, "digital", INTEGRATION_ORGANISATION_ID);
+        if (latestDigital) digitalPassMarks[latestDigital.id] = await digitalPassMark(supabase, latestDigital.id);
+      }
+      decisions = planAssessments({
+        organisationId: INTEGRATION_ORGANISATION_ID,
+        llnRequired,
+        digitalRequired,
+        invitations,
+        previousLog,
+        policy: validityPolicy,
+        requirements,
+        digitalPassMarks,
+        qualificationIdentified: !!qualificationId,
+        defaultMinimumAcsf: DEFAULT_MIN_ACSF,
+        now,
+      }).decisions;
+    }
+
+    const llnDecision = decisions.find((d) => d.type === "lln");
+    const digitalDecision = decisions.find((d) => d.type === "digital");
+    const llnAction = ambiguousReason ? (llnRequired ? "review" : "none") : (llnDecision?.action ?? "none");
+    const digitalAction = ambiguousReason ? (digitalRequired ? "review" : "none") : (digitalDecision?.action ?? "none");
+    let llnInvitationId: string | null = llnDecision?.invitationId ?? null;
+    let digitalInvitationId: string | null = digitalDecision?.invitationId ?? null;
 
     // ── 7. Create invitations for anything that requires a new one ──────────
     let newInvitationId: string | null = null;
@@ -1241,40 +1018,26 @@ Deno.serve(async (req: Request) => {
     const needsNewLln = llnAction === "sent";
     const needsNewDigital = digitalAction === "sent";
 
-    // Backfill qualification onto an existing active invitation that was created
+    // Backfill qualification onto an existing OPEN invitation that was created
     // without one (e.g. when the enrolment API was unavailable on the first run).
     if (qualificationId && !needsNewLln && !needsNewDigital) {
-      const existingInvId = llnInvitationId ?? digitalInvitationId;
+      const existingInvId = (llnAction === "active" ? llnInvitationId : null) ?? (digitalAction === "active" ? digitalInvitationId : null);
       if (existingInvId) {
-        const { data: existingInv } = await supabase
+        await supabase
           .from("assessment_invitations")
-          .select("id, qualification_id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-          .eq("id", existingInvId)
-          .maybeSingle();
-        if (existingInv && !existingInv.qualification_id) {
-          await supabase
-            .from("assessment_invitations")
-            .update({ qualification_id: qualificationId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-            .eq("id", existingInvId);
-        }
+          .update({ qualification_id: qualificationId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
+          .eq("id", existingInvId).is("qualification_id", null);
       }
     }
 
-    // Find or create the student record
-    let studentId: string | null = null;
     let enrolmentId: string | null = null;
-    try {
-      studentId = await findOrCreateStudent(supabase, {
-        firstName,
-        lastName,
-        dob,
-        email: email || null,
-        axcelerateContactId: contactId,
-      });
-      enrolmentId = await findOrCreateEnrolment(supabase, studentId, qualificationId, resolvedCourseId);
-    } catch (e: any) {
-      // Non-fatal — proceed without student linkage
-      console.error("Student/enrolment creation failed:", e.message);
+    if (studentId) {
+      try {
+        enrolmentId = await findOrCreateEnrolment(supabase, studentId, qualificationId, resolvedCourseId);
+      } catch (e: any) {
+        // Non-fatal — proceed without enrolment linkage
+        console.error("Enrolment creation failed:", e.message);
+      }
     }
 
     if (needsNewLln || needsNewDigital) {
@@ -1391,46 +1154,56 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // ── 8. Write contact note to aXcelerate ────────────────────────────────
+    // ── 8. Contact note: one concise summary, written only when the outcome changes
+    const finalDecisions: Decision[] = ambiguousReason
+      ? (["lln", "digital"] as AssessmentType[])
+          .filter((t) => (t === "lln" ? llnRequired : digitalRequired))
+          .map((t) => ({ type: t, action: "review" as const, invitationId: null,
+            check: { status: "unverifiable" as const, reason: `${ambiguousReason}, so the student could not be identified reliably`, completedAt: null, validUntil: null, validityDays: null, sufficiencyDetail: null } }))
+      : decisions.map((d) => d.action === "sent"
+          ? { ...d, invitationId: (d.type === "lln" ? llnInvitationId : digitalInvitationId) }
+          : d);
+    const signature = outcomeSignature(finalDecisions);
     const noteText = buildInboundNote({
       contactName: fullName,
-      contactEmail: email,
       qualName,
-      llnAction,
-      digitalAction,
-      llnInsufficientAcsf,
-      digitalInsufficientAcsf,
+      qualificationIdentified: !!qualificationId,
+      decisions: finalDecisions,
+      now,
       timezone: accountTimezone,
     });
 
-    let noteWritten = false;
-    try {
-      const noteRes = await fetch(`${apiBaseUrl}/contact/note/`, {
-        method: "POST",
-        headers: axHdr,
-        body: new URLSearchParams({ contactID: String(contactId), contactNote: noteText, noteTypeID: "88" }),
-      });
-      noteWritten = noteRes.ok;
-
-      await supabase.from("axcelerate_sync_log").insert({
-        invitation_id: newInvitationId,
-        event_type: "inbound_sync",
-        sync_type: "note",
-        request_payload: { contactID: contactId, note_length: noteText.length },
-        response_payload: await noteRes.json().catch(() => ({})),
-        status: noteRes.ok ? "success" : "failed",
-        error: noteRes.ok ? null : `HTTP ${noteRes.status}`,
-      });
-    } catch (e: any) {
-      await supabase.from("axcelerate_sync_log").insert({
-        invitation_id: newInvitationId,
-        event_type: "inbound_sync",
-        sync_type: "note",
-        request_payload: { contactID: contactId },
-        response_payload: null,
-        status: "failed",
-        error: e.message,
-      });
+    const writeNote = shouldWriteNote(previousLog, signature, finalDecisions);
+    let noteWritten = !writeNote;
+    if (writeNote) {
+      try {
+        const noteRes = await fetch(`${apiBaseUrl}/contact/note/`, {
+          method: "POST",
+          headers: axHdr,
+          body: new URLSearchParams({ contactID: String(contactId), contactNote: noteText, noteTypeID: "88" }),
+        });
+        noteWritten = noteRes.ok;
+        await supabase.from("axcelerate_sync_log").insert({
+          invitation_id: newInvitationId,
+          event_type: "inbound_sync",
+          sync_type: "note",
+          request_payload: { contactID: contactId, note_length: noteText.length },
+          response_payload: await noteRes.json().catch(() => ({})),
+          status: noteRes.ok ? "success" : "failed",
+          error: noteRes.ok ? null : `HTTP ${noteRes.status}`,
+        });
+      } catch (e: any) {
+        noteWritten = false;
+        await supabase.from("axcelerate_sync_log").insert({
+          invitation_id: newInvitationId,
+          event_type: "inbound_sync",
+          sync_type: "note",
+          request_payload: { contactID: contactId },
+          response_payload: null,
+          status: "failed",
+          error: e.message,
+        });
+      }
     }
 
     // ── 9. Record in inbound sync log ───────────────────────────────────────
@@ -1439,24 +1212,39 @@ Deno.serve(async (req: Request) => {
       : llnRequired ? "lln"
       : "digital";
 
-    const finalStatus = needsNewLln || needsNewDigital ? "created" : "skipped";
+    const needsReview = llnAction === "review" || digitalAction === "review";
+    const finalStatus = needsNewLln || needsNewDigital
+      ? "created"
+      : needsReview ? "review_required" : "skipped";
+    const keptInvitationId = previousLog?.status === "created" ? previousLog.invitation_id : null;
 
     await supabase.from("axcelerate_inbound_sync_log").upsert(
       {
+        organisation_id: INTEGRATION_ORGANISATION_ID,
         axcelerate_contact_id: contactId,
         assessment_type: assessmentTypeDone,
         qualification_id: qualificationId,
         axcelerate_course_id: resolvedCourseId,
         idempotency_key: idempotencyKey,
-        status: finalStatus,
-        invitation_id: newInvitationId,
+        status: finalStatus === "skipped" && keptInvitationId ? "created" : finalStatus,
+        invitation_id: newInvitationId ?? keptInvitationId,
         lln_invitation_id: llnInvitationId,
         digital_invitation_id: digitalInvitationId,
         contact_name: fullName,
         contact_email: email,
-        note_text: noteText,
+        note_text: writeNote ? noteText : (previousLog?.note_text ?? noteText),
         note_written: noteWritten,
-        processed_at: new Date().toISOString(),
+        outcome_signature: signature,
+        decision_at: plan.asOf.toISOString(),
+        validated_at: needsReview ? null : now.toISOString(),
+        validity_checks: finalDecisions.map((d) => ({
+          type: d.type, action: d.action, invitation_id: d.invitationId,
+          status: d.check?.status ?? null, reason: d.check?.reason ?? null,
+          completed_at: d.check?.completedAt ?? null, valid_until: d.check?.validUntil ?? null,
+          validity_days: d.check?.validityDays ?? null, requirements: d.check?.sufficiencyDetail ?? null,
+        })),
+        error: ambiguousReason,
+        processed_at: now.toISOString(),
       },
       { onConflict: "idempotency_key" },
     );

@@ -22,6 +22,7 @@ interface SyncLog {
   note_text: string | null;
   note_written: boolean;
   error: string | null;
+  validity_checks?: Array<{ type: string; action: string; status: string | null; reason: string | null; completed_at: string | null; valid_until: string | null }> | null;
   processed_at: string;
   created_at: string;
 }
@@ -32,6 +33,16 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   pending:    { label: 'Pending',    color: 'bg-amber-100 text-amber-700',     icon: Clock        },
   processing: { label: 'Processing', color: 'bg-blue-100 text-blue-700',       icon: RefreshCw    },
   failed:     { label: 'Failed',     color: 'bg-red-100 text-red-700',         icon: XCircle      },
+  review_required: { label: 'Review required', color: 'bg-amber-100 text-amber-800', icon: Eye },
+  error:      { label: 'Error',      color: 'bg-red-100 text-red-700',         icon: XCircle      },
+};
+
+const CHECK_LABELS: Record<string, string> = {
+  valid: 'Previous result reused',
+  expired: 'Previous result expired — reassessed',
+  insufficient: 'Previous result insufficient — reassessed',
+  unverifiable: 'Not accepted automatically',
+  not_configured: 'Validity period not set',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -218,7 +229,9 @@ export function AxcelerateInboundPage() {
             ? ` (custom fields: ${JSON.stringify(debug).slice(0, 200)})`
             : '';
           msg = `No action taken for contact ${id} — neither lln_quiz_required nor digital_quiz_required was "Yes".${debugStr}`;
-        } else if (data.status === 'skipped') {
+        } else if (data.status === 'review_required') {
+          msg = `Held for review — a previous result could not be accepted automatically (LLN: ${data.lln_action || 'none'}, Digital: ${data.digital_action || 'none'}). See the log entry for the reason.`;
+        } else if (data.status === 'skipped' || data.message === 'Already processed') {
           msg = `Already processed — no new action taken (${data.lln_action || 'none'} / ${data.digital_action || 'none'}).`;
         } else {
           const lln = data.lln_action || 'none';
@@ -606,6 +619,19 @@ export function AxcelerateInboundPage() {
                         </div>
                       </div>
 
+                      {(log.validity_checks ?? []).some(c => c.status) && (
+                        <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-1" data-testid="validity-checks">
+                          <p className="text-xs font-semibold text-slate-600">Previous result checks</p>
+                          {(log.validity_checks ?? []).filter(c => c.status).map(c => (
+                            <p key={c.type} className="text-xs text-slate-600">
+                              <span className="font-medium">{c.type === 'lln' ? 'LLN' : 'Digital'}:</span>{' '}
+                              {CHECK_LABELS[c.status!] ?? c.status} — {c.reason}
+                              {c.completed_at ? ` (completed ${fmt(c.completed_at)}${c.valid_until ? `, valid until ${fmt(c.valid_until)}` : ''})` : ''}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
                       {log.error && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                           <p className="text-xs font-semibold text-red-700 mb-1">Error</p>
@@ -644,7 +670,7 @@ export function AxcelerateInboundPage() {
 
                       {log.note_text && (
                         <div>
-                          <p className="text-xs font-semibold text-slate-600 mb-1">Contact Note Written to aXcelerate</p>
+                          <p className="text-xs font-semibold text-slate-600 mb-1">{log.note_written ? 'Contact note written to aXcelerate' : 'Contact note (not yet written to aXcelerate)'}</p>
                           <pre className="text-xs text-slate-600 bg-white border border-slate-200 rounded-lg p-3 whitespace-pre-wrap font-mono leading-relaxed">
                             {log.note_text}
                           </pre>
