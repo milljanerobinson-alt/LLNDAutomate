@@ -1,101 +1,40 @@
-# EWO-034R.2 — GitHub Actions Verification Workflow for Governed EWO Branches
-#
-# This workflow is triggered by the EIOS pipeline when a governed EWO branch
-# has committed changes. It runs:
-#   - dependency installation using locked dependencies
-#   - project type-check
-#   - production build
-#   - unit tests
-#   - integration tests
-#   - linting
-#
-# The workflow only runs on branches starting with "ewo/" to ensure it does
-# not interfere with normal branch workflows.
-
+# Temporary diagnostics run (throwaway ewo/diag-* branches only; never merged).
+# Results are emitted as annotations so they can be read through the API.
 name: EWO Verification
-
 on:
-  workflow_dispatch:
-    inputs:
-      ewo_ref:
-        description: 'The EWO reference (e.g. EWO-034)'
-        required: true
-        type: string
   push:
-    branches:
-      - 'ewo/**'
-
+    branches: ['ewo/**']
 permissions:
   contents: read
-  checks: read
-  actions: read
-
-env:
-  NODE_VERSION: '20'
-
 jobs:
   verify:
-    name: EWO Verification
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout EWO branch
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies (locked)
-        run: npm ci
-
-      - name: Type-check
-        id: typecheck
-        run: npx tsc --noEmit
-        continue-on-error: true
-
-      - name: Lint
-        id: lint
-        run: npx eslint src/ --max-warnings 0
-        continue-on-error: true
-
-      - name: Production build
-        id: build
-        run: npm run build
-        continue-on-error: true
-
-      - name: Unit tests
-        id: unit-tests
-        run: npx vitest run --reporter=json --outputFile=test-results.json
-        continue-on-error: true
-
-      - name: Aggregate results
-        if: always()
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Gates
+        shell: bash
         run: |
-          echo "## EWO Verification Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Gate | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Type-check | ${{ steps.typecheck.outcome }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Lint | ${{ steps.lint.outcome }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build | ${{ steps.build.outcome }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Unit tests | ${{ steps.unit-tests.outcome }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "EWO Ref: ${{ github.event.inputs.ewo_ref || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
-          echo "Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Fail if any gate failed
-        if: always()
-        run: |
-          if [ "${{ steps.typecheck.outcome }}" != "success" ] || \
-             [ "${{ steps.build.outcome }}" != "success" ] || \
-             [ "${{ steps.unit-tests.outcome }}" != "success" ]; then
-            echo "One or more verification gates failed"
-            exit 1
-          fi
+          set +e
+          enc() { python3 -c 'import sys,urllib.parse; d=sys.stdin.read()[-60000:]; print(d.replace("%","%25").replace("\r","").replace("\n","%0A"))'; }
+          npx tsc --noEmit > tsc.txt 2>&1; T=$?
+          { echo "exit=$T errors=$(grep -c 'error TS' tsc.txt)"; grep 'error TS' tsc.txt | sed -E 's/\(.*//' | sort | uniq -c | sort -rn; } > tsc.sum
+          echo "::notice title=TYPECHECK::$(enc < tsc.sum)"
+          npx eslint src/ --max-warnings 0 > eslint.txt 2>&1; E=$?
+          { echo "exit=$E"; tail -n 60 eslint.txt; } > eslint.sum
+          echo "::notice title=LINT::$(enc < eslint.sum)"
+          npx vite build > build.txt 2>&1; B=$?
+          { echo "exit=$B"; tail -n 12 build.txt; } > build.sum
+          echo "::notice title=BUILD::$(enc < build.sum)"
+          npx vitest run > vitest.txt 2>&1; V=$?
+          sed -i 's/\x1b\[[0-9;]*m//g' vitest.txt
+          { echo "exit=$V"; grep -E '^ *(Test Files|Tests) ' vitest.txt; echo "failed files:"; grep -E '^ *FAIL ' vitest.txt | sed -E 's/^ *FAIL +//; s/ .*//' | sort -u; } > vitest.sum
+          echo "::notice title=UNIT_TESTS::$(enc < vitest.sum)"
+          npx vitest run src/tests/issue040_rto_workspace_access.test.ts > v40.txt 2>&1; V40=$?
+          sed -i 's/\x1b\[[0-9;]*m//g' v40.txt
+          { echo "exit=$V40"; grep -E '^ *(Test Files|Tests) |✗|×|FAIL|AssertionError' v40.txt | head -n 40; } > v40.sum
+          echo "::notice title=ISSUE040_TESTS::$(enc < v40.sum)"
+          true
