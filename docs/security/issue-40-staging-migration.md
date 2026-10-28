@@ -65,7 +65,9 @@ be applied after `20261028120000_issue040_conditional_staff_deletion.sql`. It:
   `environment` key;
 - bills each completed assessment to the candidate's own RTO subscription;
 - stamps server-written email/aXcelerate queue and log rows with the related
-  invitation's RTO (previously these server inserts were refused).
+  invitation's RTO (previously these server inserts were refused);
+- replaces the base candidate-ownership trigger, which refused every
+  `students` insert, and lets trusted server jobs name the owning RTO.
 
 Legacy rows (created before organisations existed) are assigned to one legacy
 organisation. If exactly one organisation exists it is used automatically. If

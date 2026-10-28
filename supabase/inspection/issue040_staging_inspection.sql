@@ -115,6 +115,11 @@ SELECT json_build_object(
   'auth_users_triggers', (SELECT j FROM auth_triggers),
   'foreign_keys_to_users', (SELECT j FROM user_fks),
   'postgres_can_delete_auth_users', has_table_privilege('postgres', 'auth.users', 'DELETE'),
+  'candidate_table_columns', (SELECT json_object_agg(table_name, cols) FROM (
+      SELECT table_name, json_agg(column_name ORDER BY ordinal_position) AS cols
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name IN ('students','enrolments','assessment_invitations')
+      GROUP BY table_name) c),
   'settings_key_names', (SELECT settings_keys FROM dyn),
   'organisations', (SELECT organisations FROM dyn),
   'memberships', (SELECT memberships FROM dyn),

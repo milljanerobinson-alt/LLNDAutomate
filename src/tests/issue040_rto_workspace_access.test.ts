@@ -499,3 +499,25 @@ describe('Issue #40 — emails and Technical logs use the owning RTO', () => {
   });
 });
 
+describe('Issue #40 — candidate ownership for server-created candidates', () => {
+  it('keeps every aXcelerate inbound candidate, invitation and qualification query inside the integration RTO', () => {
+    const inbound = fn('axcelerate-inbound-sync');
+    const unscoped = [...inbound.matchAll(/\.from\("(students|enrolments|assessment_invitations|qualifications)"\)\s*\.(select|update)\(/g)]
+      .filter(m => !inbound.slice(m.index!, m.index! + 400).includes('.eq("organisation_id", INTEGRATION_ORGANISATION_ID)'));
+    expect(unscoped).toEqual([]);
+    expect(inbound.match(/organisation_id: INTEGRATION_ORGANISATION_ID,/g)).toHaveLength(3);
+    expect(inbound).toContain('INTEGRATION_ORGANISATION_ID = integrationOrganisationId;');
+  });
+  it('lets a trusted server name the owning RTO and never lets users cross RTOs', () => {
+    const trigger = dataScoping.slice(dataScoping.indexOf('CREATE OR REPLACE FUNCTION public.set_candidate_organisation()'));
+    expect(trigger).toContain('IF resolved IS NULL AND auth.uid() IS NULL AND NEW.organisation_id IS NOT NULL THEN');
+    expect(trigger).toContain("RAISE EXCEPTION 'cross-organisation candidate write denied'");
+    expect(trigger).toContain("RAISE EXCEPTION 'client-supplied organisation ownership does not match trusted context'");
+  });
+  it('does not reference student_id on the students table in a combined condition', () => {
+    const trigger = dataScoping.slice(dataScoping.indexOf('CREATE OR REPLACE FUNCTION public.set_candidate_organisation()'));
+    expect(trigger).toMatch(/IF TG_TABLE_NAME IN \('enrolments','assessment_invitations'\) THEN\s+IF NEW\.student_id IS NOT NULL THEN/);
+    expect(trigger).not.toMatch(/TG_TABLE_NAME[^\n]*AND NEW\.student_id/);
+  });
+});
+

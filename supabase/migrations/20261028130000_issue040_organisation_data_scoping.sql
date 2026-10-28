@@ -23,6 +23,10 @@
    5. Server-written Technical logs and queues (email queue, aXcelerate
       write-back queue and sync logs) take their organisation from the related
       invitation, so server jobs no longer fail the base Issue #40 trigger.
+   6. Server-created candidates, enrolments and invitations (aXcelerate inbound
+      sync) may name their owning organisation when several RTOs exist, and
+      inserting a candidate no longer fails on the base trigger's reference to
+      a student_id field that the students table does not have.
 
    Server compatibility bridge (temporary, until aXcelerate/email server
    functions are made organisation-aware): Edge Functions still read
@@ -455,5 +459,50 @@ BEGIN
   RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION public.set_diagnostic_organisation() FROM PUBLIC, anon, authenticated;
+
+-- ── 7. Candidate rows: allow a trusted server to name the organisation ──────
+-- The base Issue #40 trigger refused every server-created candidate,
+-- enrolment or invitation once more than one RTO existed, even when the
+-- server supplied the owning organisation (aXcelerate inbound sync). Rules
+-- now: a signed-in user always writes their own RTO; a row linked to a
+-- candidate belongs to that candidate's RTO; a trusted server context (no
+-- end-user JWT) may supply the organisation; otherwise the only RTO; else refuse.
+CREATE OR REPLACE FUNCTION public.set_candidate_organisation()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE resolved uuid; candidate uuid;
+BEGIN
+  IF auth.uid() IS NOT NULL THEN
+    resolved := public.current_organisation_id();
+    IF resolved IS NULL THEN RAISE EXCEPTION 'active organisation membership required'; END IF;
+  END IF;
+  -- Nested on purpose: students rows have no student_id field, and PL/pgSQL
+  -- evaluates every field in a combined condition (the base trigger's combined
+  -- form raised "record new has no field student_id" on every students insert).
+  IF TG_TABLE_NAME IN ('enrolments','assessment_invitations') THEN
+    IF NEW.student_id IS NOT NULL THEN
+      SELECT s.organisation_id INTO candidate FROM public.students s WHERE s.id = NEW.student_id;
+    END IF;
+  END IF;
+  IF candidate IS NOT NULL THEN
+    IF resolved IS NOT NULL AND resolved <> candidate THEN RAISE EXCEPTION 'cross-organisation candidate write denied'; END IF;
+    resolved := candidate;
+  END IF;
+  IF resolved IS NULL AND auth.uid() IS NULL AND NEW.organisation_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM public.organisations o WHERE o.id = NEW.organisation_id) THEN
+      RAISE EXCEPTION 'organisation ownership cannot be resolved safely';
+    END IF;
+    resolved := NEW.organisation_id;
+  END IF;
+  IF resolved IS NULL AND (SELECT count(*) FROM public.organisations) = 1 THEN
+    SELECT id INTO resolved FROM public.organisations;
+  END IF;
+  IF resolved IS NULL THEN RAISE EXCEPTION 'organisation ownership cannot be resolved safely'; END IF;
+  IF NEW.organisation_id IS NOT NULL AND NEW.organisation_id <> resolved THEN
+    RAISE EXCEPTION 'client-supplied organisation ownership does not match trusted context';
+  END IF;
+  NEW.organisation_id := resolved;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.set_candidate_organisation() FROM PUBLIC, anon, authenticated;
 
 COMMIT;

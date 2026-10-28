@@ -1,5 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { isIntegrationStaff } from "../_shared/organisation-access.ts";
+import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +11,11 @@ const DEFAULT_MIN_ACSF = 2;
 const DEFAULT_DIGITAL_PASS = 50;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
+
+// Issue #40: every candidate, invitation and qualification this sync reads or
+// writes belongs to the RTO that owns the platform aXcelerate credentials.
+// Set once per request, before any processing.
+let INTEGRATION_ORGANISATION_ID = "";
 
 async function verifyAuth(req: Request, supabase: any): Promise<boolean> {
   const authHeader = req.headers.get("Authorization") || "";
@@ -269,7 +274,7 @@ async function findOrCreateStudent(
   // Primary: match by axcelerate contact ID
   const { data: byContactId } = await supabase
     .from("students")
-    .select("id")
+    .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
     .eq("axcelerate_contact_id", axcelerateContactId)
     .maybeSingle();
   if (byContactId) return byContactId.id;
@@ -278,13 +283,13 @@ async function findOrCreateStudent(
   if (dob) {
     const { data: byDob } = await supabase
       .from("students")
-      .select("id")
+      .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .eq("date_of_birth", dob)
       .ilike("first_name", firstName)
       .ilike("last_name", lastName)
       .maybeSingle();
     if (byDob) {
-      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId }).eq("id", byDob.id);
+      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", byDob.id);
       return byDob.id;
     }
   }
@@ -293,11 +298,11 @@ async function findOrCreateStudent(
   if (email) {
     const { data: byEmail } = await supabase
       .from("students")
-      .select("id")
+      .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .ilike("email", email)
       .maybeSingle();
     if (byEmail) {
-      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId }).eq("id", byEmail.id);
+      await supabase.from("students").update({ axcelerate_contact_id: axcelerateContactId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("id", byEmail.id);
       return byEmail.id;
     }
   }
@@ -306,6 +311,7 @@ async function findOrCreateStudent(
   const { data: created, error } = await supabase
     .from("students")
     .insert({
+      organisation_id: INTEGRATION_ORGANISATION_ID,
       axcelerate_contact_id: axcelerateContactId,
       first_name: firstName,
       last_name: lastName,
@@ -329,7 +335,7 @@ async function findOrCreateEnrolment(
   if (qualificationId) {
     const { data: existing } = await supabase
       .from("enrolments")
-      .select("id")
+      .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .eq("student_id", studentId)
       .eq("qualification_id", qualificationId)
       .maybeSingle();
@@ -339,6 +345,7 @@ async function findOrCreateEnrolment(
   const { data: created, error } = await supabase
     .from("enrolments")
     .insert({
+      organisation_id: INTEGRATION_ORGANISATION_ID,
       student_id: studentId,
       qualification_id: qualificationId,
       axcelerate_course_id: axcelerateCourseId,
@@ -390,7 +397,7 @@ async function findExistingLearner(
   if (dob) {
     const { data } = await supabase
       .from("assessment_invitations")
-      .select("*")
+      .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .eq("candidate_dob", dob)
       .ilike("candidate_name", `%${firstName}%`)
       .ilike("candidate_name", `%${lastName}%`)
@@ -403,7 +410,7 @@ async function findExistingLearner(
   if (fullName.length > 2) {
     const { data } = await supabase
       .from("assessment_invitations")
-      .select("*")
+      .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .ilike("candidate_name", fullName)
       .order("created_at", { ascending: false })
       .limit(1);
@@ -414,7 +421,7 @@ async function findExistingLearner(
   if (email) {
     const { data } = await supabase
       .from("assessment_invitations")
-      .select("*")
+      .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
       .ilike("candidate_email", email)
       .order("created_at", { ascending: false })
       .limit(1);
@@ -437,7 +444,7 @@ async function findBestCompletedInvitation(
   // Build a base query for completed invitations for this learner
   let query = supabase
     .from("assessment_invitations")
-    .select("*")
+    .select("*").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
     .eq("status", "completed")
     .order("completed_at", { ascending: false })
     .limit(10);
@@ -490,6 +497,7 @@ async function createInvitation(
   const { data: inv, error } = await supabase
     .from("assessment_invitations")
     .insert({
+      organisation_id: INTEGRATION_ORGANISATION_ID,
       candidate_name: params.candidateName,
       candidate_email: params.candidateEmail,
       candidate_dob: params.candidateDob,
@@ -701,6 +709,14 @@ Deno.serve(async (req: Request) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const integrationOrganisationId = await getIntegrationOrganisationId(supabase);
+    if (!integrationOrganisationId) {
+      return new Response(JSON.stringify({ error: "aXcelerate integration owner is not recorded" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    INTEGRATION_ORGANISATION_ID = integrationOrganisationId;
 
     const body = await req.json().catch(() => ({}));
     const contactId: number | null = body.contact_id ?? null;
@@ -950,7 +966,7 @@ Deno.serve(async (req: Request) => {
 
     if (resolvedCourseId) {
       await lookupQual(
-        supabase.from("qualifications").select("id, code, name")
+        supabase.from("qualifications").select("id, code, name").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .eq("axcelerate_course_id", resolvedCourseId).eq("active", true).maybeSingle()
       );
     }
@@ -958,7 +974,7 @@ Deno.serve(async (req: Request) => {
     // Fallback: look up by qualification code if still not found
     if (!qualificationId && contactQualCode) {
       await lookupQual(
-        supabase.from("qualifications").select("id, code, name")
+        supabase.from("qualifications").select("id, code, name").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .ilike("code", contactQualCode).eq("active", true).maybeSingle()
       );
     }
@@ -1018,7 +1034,7 @@ Deno.serve(async (req: Request) => {
         if (!invitationGone && existingLog.invitation_id) {
           const { data: existingInv } = await supabase
             .from("assessment_invitations")
-            .select("id")
+            .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
             .eq("id", existingLog.invitation_id)
             .maybeSingle();
           invitationGone = !existingInv;
@@ -1036,14 +1052,14 @@ Deno.serve(async (req: Request) => {
           if (email && existingLog.invitation_id) {
             const { data: inv } = await supabase
               .from("assessment_invitations")
-              .select("id, candidate_email, unique_token, lln_token, digital_token")
+              .select("id, candidate_email, unique_token, lln_token, digital_token").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
               .eq("id", existingLog.invitation_id)
               .maybeSingle();
 
             if (inv && !inv.candidate_email && email) {
               await supabase
                 .from("assessment_invitations")
-                .update({ candidate_email: email })
+                .update({ candidate_email: email }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
                 .eq("id", inv.id);
 
               await supabase
@@ -1137,7 +1153,7 @@ Deno.serve(async (req: Request) => {
     if (existingLearner && !existingLearner.axcelerate_contact_id) {
       await supabase
         .from("assessment_invitations")
-        .update({ axcelerate_contact_id: contactId })
+        .update({ axcelerate_contact_id: contactId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
         .ilike("candidate_email", existingLearner.candidate_email);
     }
 
@@ -1154,7 +1170,7 @@ Deno.serve(async (req: Request) => {
       // Check for an existing active (not completed) invitation for this learner + LLN
       const { data: activeInv } = await supabase
         .from("assessment_invitations")
-        .select("id, status, lln_status")
+        .select("id, status, lln_status").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
         .ilike("candidate_email", email || existingLearner?.candidate_email || "__none__")
         .in("status", ["sent", "opened", "in_progress"])
         .not("lln_token", "is", null)
@@ -1190,7 +1206,7 @@ Deno.serve(async (req: Request) => {
     if (digitalRequired) {
       const { data: activeInv } = await supabase
         .from("assessment_invitations")
-        .select("id, status, digital_status")
+        .select("id, status, digital_status").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
         .ilike("candidate_email", email || existingLearner?.candidate_email || "__none__")
         .in("status", ["sent", "opened", "in_progress"])
         .not("digital_token", "is", null)
@@ -1232,13 +1248,13 @@ Deno.serve(async (req: Request) => {
       if (existingInvId) {
         const { data: existingInv } = await supabase
           .from("assessment_invitations")
-          .select("id, qualification_id")
+          .select("id, qualification_id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .eq("id", existingInvId)
           .maybeSingle();
         if (existingInv && !existingInv.qualification_id) {
           await supabase
             .from("assessment_invitations")
-            .update({ qualification_id: qualificationId })
+            .update({ qualification_id: qualificationId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
             .eq("id", existingInvId);
         }
       }
@@ -1287,7 +1303,7 @@ Deno.serve(async (req: Request) => {
       // Update student status and log lifecycle event
       if (studentId) {
         await supabase.from("students")
-          .update({ current_status: "invitation_sent", latest_invitation_id: invId })
+          .update({ current_status: "invitation_sent", latest_invitation_id: invId }).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .eq("id", studentId);
         await logLifecycleEvent(supabase, {
           studentId,
@@ -1303,7 +1319,7 @@ Deno.serve(async (req: Request) => {
       // Build portal URLs
       const { data: createdInv } = await supabase
         .from("assessment_invitations")
-        .select("unique_token, lln_token, digital_token")
+        .select("unique_token, lln_token, digital_token").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
         .eq("id", invId)
         .single();
 

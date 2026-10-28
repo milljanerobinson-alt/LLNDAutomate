@@ -29,6 +29,8 @@ Status: implemented on `feature/issue-40-rto-workspace-access`; awaiting staging
 
 **Background jobs.** Completion processing, the email queue and aXcelerate jobs could not record their queue and log entries once the first issue 40 database change was applied. Each entry now belongs to the related candidate's RTO.
 
+**Adding candidates.** The first issue 40 database change stopped every new candidate being saved, whether added by staff or by aXcelerate sync. This is fixed. aXcelerate sync now only matches and creates candidates, invitations and qualifications within the RTO that owns the aXcelerate connection, even when several RTOs exist.
+
 ## What does not change
 
 - Candidates still use their assessment links, and nothing changes for them.
@@ -37,7 +39,7 @@ Status: implemented on `feature/issue-40-rto-workspace-access`; awaiting staging
 
 ## Known limits (follow-on work)
 
-- A second RTO can't yet connect its own aXcelerate account. Automatic aXcelerate sync can't create candidates for any RTO while more than one RTO exists.
+- A second RTO can't yet connect its own aXcelerate account.
 - Some EIOS engineering screens can no longer read secrets in the browser. The "startup catch-up" for scheduled briefings and the "configured keys" indicator will show nothing until those screens use a server check.
 
 ## How to test (Product Owner)
