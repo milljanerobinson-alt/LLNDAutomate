@@ -1,0 +1,35 @@
+# Temporary diagnostics run (throwaway ewo/diag-* branch only; never merged).
+name: EWO Verification
+on:
+  push:
+    branches: ['ewo/**']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Checks
+        shell: bash
+        run: |
+          set +e
+          note() { python3 -c 'import sys; t=sys.argv[1]; d=open(sys.argv[2]).read()[:3900]; print("::notice title="+t+"::"+d.replace("%","%25").replace("\r","").replace("\n","%0A"))' "$1" "$2"; }
+          : > tests.sum
+          for t in issue040_rto_workspace_access ewo033_security_regression; do
+            npx vitest run src/tests/$t.test.ts > v.txt 2>&1; V=$?
+            sed -i 's/\x1b\[[0-9;]*m//g' v.txt
+            { echo "$t exit=$V"; grep -E '^ *(Test Files|Tests) |FAIL|AssertionError|RUN +v' v.txt | head -n 10; } >> tests.sum
+          done
+          note CONTRACT_TESTS tests.sum
+          npx vitest run > vitest.txt 2>&1; V=$?
+          sed -i 's/\x1b\[[0-9;]*m//g' vitest.txt
+          { echo "exit=$V"; grep -E '^ *(Test Files|Tests) ' vitest.txt; } > vitest.sum
+          note UNIT_TESTS vitest.sum
+          npx tsc --noEmit -p tsconfig.app.json > tsc.txt 2>&1; echo "exit=$? errors=$(grep -c 'error TS' tsc.txt)" > tsc.sum; note TYPECHECK tsc.sum
+          npx vite build > build.txt 2>&1; echo "exit=$?" > build.sum; note BUILD build.sum
+          true
