@@ -1,0 +1,52 @@
+# Temporary diagnostics run (throwaway ewo/diag-* branch only; never merged).
+name: EWO Verification
+on:
+  push:
+    branches: ['ewo/**']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - name: Checks
+        shell: bash
+        run: |
+          set +e
+          note() { python3 -c 'import sys; t=sys.argv[1]; d=open(sys.argv[2]).read()[:3900]; print("::notice title="+t+"::"+d.replace("%","%25").replace("\r","").replace("\n","%0A"))' "$1" "$2"; }
+          git worktree add -q ../base 7f6e0b3
+          errs() { DENO_NO_PACKAGE_JSON=1 deno check --node-modules-dir=none $1 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'TS[0-9]+ \[ERROR\]|error: ' | sed -E 's/^ +//' | sort -u; }
+          : > deno.sum
+          for f in axcelerate-inbound-sync; do
+            errs supabase/functions/$f/index.ts > h.txt
+            if [ -f ../base/supabase/functions/$f/index.ts ]; then (cd ../base && errs supabase/functions/$f/index.ts) > b.txt; else : > b.txt; fi
+            NEW=$(comm -13 b.txt h.txt | grep -v 'Type checking failed')
+            echo "$f base=$(wc -l < b.txt) head=$(wc -l < h.txt)" >> deno.sum
+            [ -n "$NEW" ] && echo "  NEW: $NEW" | head -8 >> deno.sum
+          done
+          note DENO_VS_BASE deno.sum
+          : > tests.sum
+          for t in assessment_result_validity issue040_rto_workspace_access; do
+            npx vitest run src/tests/$t.test.ts > v.txt 2>&1; V=$?
+            sed -i 's/\x1b\[[0-9;]*m//g' v.txt
+            { echo "$t exit=$V"; grep -E '^ *(Tests) |FAIL|AssertionError' v.txt | head -n 8; } >> tests.sum
+          done
+          note CONTRACT_TESTS tests.sum
+          npx vitest run > vitest.txt 2>&1; V=$?
+          sed -i 's/\x1b\[[0-9;]*m//g' vitest.txt
+          { echo "exit=$V"; grep -E '^ *(Test Files|Tests) ' vitest.txt; grep -E '^ FAIL ' vitest.txt | sed -E 's/ >.*//' | sort -u; } > vitest.sum
+          note UNIT_TESTS vitest.sum
+          npx tsc --noEmit -p tsconfig.app.json > tsc.txt 2>&1; TC=$?
+          (cd ../base && npm ci --silent >/dev/null 2>&1; npx tsc --noEmit -p tsconfig.app.json > ../tscb.txt 2>&1)
+          { echo "head exit=$TC errors=$(grep -c 'error TS' tsc.txt) base errors=$(grep -c 'error TS' ../tscb.txt)"; grep -E 'src/(components/settings|pages/workspace/OrganisationPage|pages/AxcelerateInboundPage|tests/assessment_result_validity)' tsc.txt | head -20; } > tsc.sum
+          note TYPECHECK tsc.sum
+          npx vite build > build.txt 2>&1; BR=$?; { echo "exit=$BR"; tail -4 build.txt; } > build.sum; note BUILD build.sum
+                    true
