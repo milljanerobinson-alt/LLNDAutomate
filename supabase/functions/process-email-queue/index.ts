@@ -295,7 +295,7 @@ Deno.serve(async (req: Request) => {
 
           // Insert completion_admin email
           if (emailSettings.send_completion_admin !== false && adminEmail) {
-            await supabase.from("email_queue").insert({
+            await supabase.from("email_queue").upsert({
               invitation_id: inv.id,
               organisation_id: inv.organisation_id,
               email_type: "completion_admin",
@@ -304,12 +304,12 @@ Deno.serve(async (req: Request) => {
               scheduled_at: inv.completed_at || new Date().toISOString(),
               idempotency_key: `${inv.id}:completion_admin`,
               extra_data: { ...extraData, candidate_name: inv.candidate_name },
-            }).onConflict("idempotency_key").ignore();
+            }, { onConflict: "idempotency_key", ignoreDuplicates: true });
           }
 
           // Insert completion_student email
           if (emailSettings.send_completion_student === true) {
-            await supabase.from("email_queue").insert({
+            await supabase.from("email_queue").upsert({
               invitation_id: inv.id,
               organisation_id: inv.organisation_id,
               email_type: "completion_student",
@@ -318,7 +318,7 @@ Deno.serve(async (req: Request) => {
               scheduled_at: inv.completed_at || new Date().toISOString(),
               idempotency_key: `${inv.id}:completion_student`,
               extra_data: extraData,
-            }).onConflict("idempotency_key").ignore();
+            }, { onConflict: "idempotency_key", ignoreDuplicates: true });
           }
         }
       }

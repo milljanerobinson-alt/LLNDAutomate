@@ -783,7 +783,7 @@ Deno.serve(async (req: Request) => {
           created_at: new Date().toISOString(),
         },
         { onConflict: "idempotency_key" },
-      ).catch(() => {});
+      ).then(() => {}, () => {});
       return new Response(JSON.stringify({ error: `Failed to fetch contact: ${e.message}` }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
