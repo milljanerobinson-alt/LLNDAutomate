@@ -521,3 +521,26 @@ describe('Issue #40 — candidate ownership for server-created candidates', () =
   });
 });
 
+describe('Issue #40 — no legacy role-wide access to remaining candidate records', () => {
+  const section = dataScoping.slice(dataScoping.indexOf('-- ── 8. Remaining candidate records'));
+  it('drops only legacy role-based staff policies, keeping candidate token policies', () => {
+    for (const table of ['enrolments', 'audit_trail', 'student_lifecycle_events', 'student_responses', 'notifications', 'axcelerate_portfolio_uploads', 'axcelerate_sync_log', 'axcelerate_inbound_sync_log', 'axcelerate_writeback_queue', 'email_queue']) {
+      expect(section).toContain(`'${table}'`);
+    }
+    expect(section).toContain("AND 'authenticated' = ANY(roles)");
+    expect(section).toContain('get_my_role');
+  });
+  it('scopes enrolments, answers, audit, notifications, lifecycle and uploads to the owning RTO', () => {
+    expect(section).toContain('CREATE POLICY enrolments_workspace_select ON public.enrolments');
+    expect(section).toContain('USING (public.can_manage_support_invitation(invitation_id));');
+    expect(section).toContain('CREATE POLICY audit_trail_workspace_select');
+    expect(section).toContain('CREATE POLICY lifecycle_workspace_select');
+    expect(section).toContain('CREATE POLICY portfolio_uploads_workspace_select');
+  });
+  it('limits staff writes to Technical queues and logs to their own RTO', () => {
+    expect(section).toContain("|| '_org_staff_insert'");
+    expect(section).toContain("|| '_org_admin_select'");
+    expect(section).not.toMatch(/FOR (INSERT|UPDATE|DELETE)[^;]*USING \(true\)/);
+  });
+});
+

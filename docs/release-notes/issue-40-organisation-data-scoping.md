@@ -31,6 +31,8 @@ Status: implemented on `feature/issue-40-rto-workspace-access`; awaiting staging
 
 **Adding candidates.** The first issue 40 database change stopped every new candidate being saved, whether added by staff or by aXcelerate sync. This is fixed. aXcelerate sync now only matches and creates candidates, invitations and qualifications within the RTO that owns the aXcelerate connection, even when several RTOs exist.
 
+**Candidate records.** Older database rules still let any RTO's admin or trainer read every RTO's enrolments, candidate answers, audit trail, candidate history, notification records and aXcelerate portfolio uploads, and write to other RTOs' email and aXcelerate queues. These are now limited to the owning RTO, following the same rules as candidates: Administration sees all of its RTO's records, and Candidate Support sees records for its support cases. Candidate assessment links are unaffected.
+
 ## What does not change
 
 - Candidates still use their assessment links, and nothing changes for them.

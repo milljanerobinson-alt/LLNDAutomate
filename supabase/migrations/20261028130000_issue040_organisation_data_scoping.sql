@@ -27,6 +27,10 @@
       sync) may name their owning organisation when several RTOs exist, and
       inserting a candidate no longer fails on the base trigger's reference to
       a student_id field that the students table does not have.
+   7. Legacy "any admin/trainer" staff policies left on enrolments, candidate
+      answers, audit trail, lifecycle history, notifications, portfolio uploads
+      and Technical queues/logs are replaced with organisation-scoped ones.
+      Candidate token policies are not touched.
 
    Server compatibility bridge (temporary, until aXcelerate/email server
    functions are made organisation-aware): Edge Functions still read
@@ -504,5 +508,124 @@ BEGIN
   RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION public.set_candidate_organisation() FROM PUBLIC, anon, authenticated;
+
+-- ── 8. Remaining candidate records: remove legacy role-wide staff access ────
+-- Policies are permissive (OR-combined), so legacy "any admin/trainer" staff
+-- policies left on these tables let every RTO read or change every other RTO's
+-- enrolments, candidate answers, audit trail, lifecycle history, notifications,
+-- portfolio uploads and Technical queues/logs. Drop only staff policies that
+-- test the legacy profile role; candidate token policies (anon / x-quiz-token)
+-- and the Issue #40 workspace policies are kept.
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT schemaname, tablename, policyname FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN ('enrolments','audit_trail','student_lifecycle_events','student_responses',
+                        'notifications','axcelerate_portfolio_uploads','axcelerate_sync_log',
+                        'axcelerate_inbound_sync_log','axcelerate_writeback_queue','email_queue')
+      AND 'authenticated' = ANY(roles)
+      AND (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ '(get_my_role\(\)|\mp\.role\M|profiles\.role\M|\mrole\s*=\s*ANY)'
+  LOOP
+    EXECUTE format('DROP POLICY %I ON %I.%I', r.policyname, r.schemaname, r.tablename);
+  END LOOP;
+END $$;
+
+-- Enrolments: Administration of the owning RTO; Candidate Support only for
+-- candidates with an accessible support case (same rule as students).
+CREATE POLICY enrolments_workspace_select ON public.enrolments FOR SELECT TO authenticated USING (
+  organisation_id = public.current_organisation_id() AND (
+    public.has_workspace_access('administration') OR
+    (public.has_workspace_access('candidate_support') AND EXISTS (
+      SELECT 1 FROM public.support_cases sc WHERE sc.student_id = enrolments.student_id
+      AND public.can_access_support_case(sc.organisation_id, sc.assigned_user_id)))));
+CREATE POLICY enrolments_admin_insert ON public.enrolments FOR INSERT TO authenticated
+  WITH CHECK (organisation_id = public.current_organisation_id() AND public.has_workspace_access('administration'));
+CREATE POLICY enrolments_admin_update ON public.enrolments FOR UPDATE TO authenticated
+  USING (organisation_id = public.current_organisation_id() AND public.has_workspace_access('administration'))
+  WITH CHECK (organisation_id = public.current_organisation_id() AND public.has_workspace_access('administration'));
+CREATE POLICY enrolments_admin_delete ON public.enrolments FOR DELETE TO authenticated
+  USING (organisation_id = public.current_organisation_id() AND public.has_workspace_access('administration'));
+
+-- Invitation-linked records follow the invitation's visibility
+-- (can_manage_support_invitation: Administration of the RTO, or Candidate
+-- Support for an accessible support case).
+CREATE POLICY student_responses_workspace_select ON public.student_responses FOR SELECT TO authenticated
+  USING (public.can_manage_support_invitation(invitation_id));
+CREATE POLICY notifications_workspace_select ON public.notifications FOR SELECT TO authenticated
+  USING (invitation_id IS NOT NULL AND public.can_manage_support_invitation(invitation_id));
+CREATE POLICY notifications_workspace_insert ON public.notifications FOR INSERT TO authenticated
+  WITH CHECK (invitation_id IS NOT NULL AND public.can_manage_support_invitation(invitation_id));
+CREATE POLICY audit_trail_workspace_select ON public.audit_trail FOR SELECT TO authenticated
+  USING (invitation_id IS NOT NULL AND public.can_manage_support_invitation(invitation_id));
+CREATE POLICY audit_trail_staff_insert ON public.audit_trail FOR INSERT TO authenticated
+  WITH CHECK (public.is_active_organisation_staff()
+              AND (invitation_id IS NULL OR public.can_manage_support_invitation(invitation_id)));
+
+CREATE OR REPLACE FUNCTION public.can_access_lifecycle_event(target_student uuid, target_invitation uuid, for_write boolean)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+  SELECT CASE
+    WHEN target_invitation IS NOT NULL AND NOT for_write THEN public.can_manage_support_invitation(target_invitation)
+    ELSE EXISTS (
+      SELECT 1 FROM public.students s
+      WHERE s.id = target_student AND s.organisation_id = public.current_organisation_id()
+    ) AND public.has_workspace_access('administration')
+  END
+$$;
+REVOKE ALL ON FUNCTION public.can_access_lifecycle_event(uuid, uuid, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.can_access_lifecycle_event(uuid, uuid, boolean) TO authenticated;
+CREATE POLICY lifecycle_workspace_select ON public.student_lifecycle_events FOR SELECT TO authenticated
+  USING (public.can_access_lifecycle_event(student_id, invitation_id, false));
+CREATE POLICY lifecycle_admin_insert ON public.student_lifecycle_events FOR INSERT TO authenticated
+  WITH CHECK (public.can_access_lifecycle_event(student_id, invitation_id, true));
+CREATE POLICY lifecycle_admin_delete ON public.student_lifecycle_events FOR DELETE TO authenticated
+  USING (public.can_access_lifecycle_event(student_id, invitation_id, true));
+
+-- Portfolio uploads are integration records: Technical or Administration of
+-- the owning RTO, through the invitation.
+CREATE OR REPLACE FUNCTION public.can_access_integration_invitation(target_invitation uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.assessment_invitations i
+    WHERE i.id = target_invitation AND i.organisation_id = public.current_organisation_id()
+  ) AND (public.has_workspace_access('technical') OR public.has_workspace_access('administration'))
+$$;
+REVOKE ALL ON FUNCTION public.can_access_integration_invitation(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.can_access_integration_invitation(uuid) TO authenticated;
+CREATE POLICY portfolio_uploads_workspace_select ON public.axcelerate_portfolio_uploads FOR SELECT TO authenticated
+  USING (public.can_access_integration_invitation(invitation_id));
+CREATE POLICY portfolio_uploads_workspace_insert ON public.axcelerate_portfolio_uploads FOR INSERT TO authenticated
+  WITH CHECK (public.can_access_integration_invitation(invitation_id));
+CREATE POLICY portfolio_uploads_workspace_update ON public.axcelerate_portfolio_uploads FOR UPDATE TO authenticated
+  USING (public.can_access_integration_invitation(invitation_id))
+  WITH CHECK (public.can_access_integration_invitation(invitation_id));
+
+-- Technical queues and logs: staff writes only within their own RTO. Reads
+-- keep the Issue #40 Technical-only policies.
+DO $$
+DECLARE tbl text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['axcelerate_sync_log','axcelerate_inbound_sync_log','axcelerate_writeback_queue','email_queue'] LOOP
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (organisation_id = public.current_organisation_id() AND (public.has_workspace_access(''technical'') OR public.has_workspace_access(''administration'')))', tbl || '_org_staff_insert', tbl);
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (organisation_id = public.current_organisation_id() AND (public.has_workspace_access(''technical'') OR public.has_workspace_access(''administration''))) WITH CHECK (organisation_id = public.current_organisation_id())', tbl || '_org_staff_update', tbl);
+  END LOOP;
+END $$;
+CREATE POLICY axcelerate_inbound_sync_log_org_staff_delete ON public.axcelerate_inbound_sync_log FOR DELETE TO authenticated
+  USING (organisation_id = public.current_organisation_id()
+         AND (public.has_workspace_access('technical') OR public.has_workspace_access('administration')));
+
+-- Existing Administration candidate actions upsert reminders and write-back
+-- jobs and clear inbound-log entries. PostgreSQL requires the caller to be able
+-- to read a row it upserts (ON CONFLICT) or deletes, so Administration may read
+-- its own RTO's rows. Navigation is unchanged: Email Activity and the aXcelerate
+-- Log stay in the Technical Workspace.
+DO $$
+DECLARE tbl text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['axcelerate_inbound_sync_log','axcelerate_writeback_queue','email_queue'] LOOP
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (organisation_id = public.current_organisation_id() AND public.has_workspace_access(''administration''))', tbl || '_org_admin_select', tbl);
+  END LOOP;
+END $$;
 
 COMMIT;
