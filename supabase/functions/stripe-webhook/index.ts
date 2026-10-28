@@ -286,7 +286,8 @@ async function getStripeKey(supabase: ReturnType<typeof createClient>): Promise<
 // first (validated), otherwise the subscription already linked to the Stripe
 // customer. Returns null when the event cannot be attributed.
 async function resolveEventOrganisation(
-  supabase: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any -- matches the untyped clients used elsewhere in this function
+  supabase: any,
   obj: Record<string, unknown> | undefined,
 ): Promise<string | null> {
   if (!obj) return null;
