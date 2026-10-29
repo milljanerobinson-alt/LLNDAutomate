@@ -33,6 +33,7 @@ const FILTER_OPTIONS: { value: RecFilter; label: string }[] = [
   { value: 'suitable', label: 'Suitable' },
   { value: 'suitable_with_support', label: 'Suitable with Support' },
   { value: 'not_yet_suitable', label: 'Not Yet Suitable' },
+  { value: 'requirements_not_confirmed', label: 'Requirements Not Confirmed' },
   { value: 'overridden', label: 'Trainer Overridden' },
 ];
 
@@ -301,6 +302,7 @@ export function ResultsPage() {
       suitable: 0,
       suitable_with_support: 0,
       not_yet_suitable: 0,
+      requirements_not_confirmed: 0,
       overridden: 0,
     };
     for (const inv of invitations) {

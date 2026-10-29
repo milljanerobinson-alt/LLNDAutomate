@@ -1,103 +1,13 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { getOrganisationEmailProfile } from "../_shared/organisation-access.ts";
+import { computeCompletionOutcome } from "../_shared/completion-outcome.ts";
+import { mappingApprovalState, type ApprovalRecord, type QualificationRequirement } from "../_shared/result-validity.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
-
-const DOMAIN_LABELS: Record<string, string> = {
-  reading: "Reading",
-  writing: "Writing",
-  numeracy: "Numeracy",
-  oral: "Oral Communication",
-  oral_communication: "Oral Communication",
-  learning: "Learning",
-  digital: "Digital Literacy",
-};
-
-const DEFAULT_MIN_LEVEL = 2;
-
-function gapSeverity(gap: number): "none" | "minor" | "significant" {
-  if (gap <= 0) return "none";
-  if (gap === 1) return "minor";
-  return "significant";
-}
-
-function computeRecommendation(
-  llnAcsfOutcomes: Record<string, number> | null,
-  digitalScore: number | null,
-  requirements: { domain: string; minimum_acsf_level: number }[],
-): {
-  recommendation: "suitable" | "suitable_with_support" | "not_yet_suitable";
-  reasons: string[];
-  riskFlags: { domain: string; studentLevel: number; requiredLevel: number; gap: number }[];
-} {
-  const reasons: string[] = [];
-  const riskFlags: { domain: string; studentLevel: number; requiredLevel: number; gap: number }[] = [];
-  let llnRecommendation: "suitable" | "suitable_with_support" | "not_yet_suitable" = "suitable";
-  let digitalRecommendation: "suitable" | "suitable_with_support" | "not_yet_suitable" = "suitable";
-
-  if (llnAcsfOutcomes && Object.keys(llnAcsfOutcomes).length > 0) {
-    let minorGaps = 0;
-    let significantGaps = 0;
-
-    for (const [domain, studentLevel] of Object.entries(llnAcsfOutcomes)) {
-      const req = requirements.find(
-        (r) =>
-          r.domain.toLowerCase() === domain.toLowerCase() ||
-          r.domain.toLowerCase().includes(domain.toLowerCase()),
-      );
-      const requiredLevel = req?.minimum_acsf_level ?? DEFAULT_MIN_LEVEL;
-      const gap = requiredLevel - studentLevel;
-
-      if (gap > 0) {
-        const severity = gapSeverity(gap);
-        riskFlags.push({ domain, studentLevel, requiredLevel, gap });
-        const label = DOMAIN_LABELS[domain.toLowerCase()] || domain;
-        if (severity === "minor") {
-          minorGaps++;
-          reasons.push(`${label}: ACSF Level ${studentLevel} (required ${requiredLevel}) — minor gap`);
-        } else {
-          significantGaps++;
-          reasons.push(`${label}: ACSF Level ${studentLevel} (required ${requiredLevel}) — significant gap`);
-        }
-      }
-    }
-
-    if (significantGaps >= 2 || (significantGaps >= 1 && minorGaps >= 1)) {
-      llnRecommendation = "not_yet_suitable";
-    } else if (significantGaps === 1 || minorGaps >= 2) {
-      llnRecommendation = "suitable_with_support";
-    } else if (minorGaps === 1) {
-      llnRecommendation = "suitable_with_support";
-    }
-  }
-
-  if (digitalScore !== null) {
-    if (digitalScore < 50) {
-      digitalRecommendation = "not_yet_suitable";
-      reasons.push(`Digital literacy score ${digitalScore}% is below the minimum threshold (50%)`);
-    } else if (digitalScore < 70) {
-      digitalRecommendation = "suitable_with_support";
-      reasons.push(`Digital literacy score ${digitalScore}% indicates some support may be beneficial`);
-    }
-  }
-
-  const priority = ["not_yet_suitable", "suitable_with_support", "suitable"];
-  const worstIdx = Math.min(
-    priority.indexOf(llnRecommendation),
-    priority.indexOf(digitalRecommendation),
-  );
-  const recommendation = priority[worstIdx] as "suitable" | "suitable_with_support" | "not_yet_suitable";
-
-  if (recommendation === "suitable" && reasons.length === 0) {
-    reasons.push("All assessed domains meet or exceed qualification requirements");
-  }
-
-  return { recommendation, reasons, riskFlags };
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -122,7 +32,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: inv, error: invErr } = await supabase
       .from("assessment_invitations")
-      .select(`*, qualification:qualifications(id, code, name, axcelerate_course_id)`)
+      .select(`*, qualification:qualifications(id, organisation_id, code, name, axcelerate_course_id, mapping_change_detected_at)`)
       .eq("id", invitation_id)
       .maybeSingle();
 
@@ -155,56 +65,84 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Load ACSF requirements
-    let requirements: { domain: string; minimum_acsf_level: number }[] = [];
-    if (inv.qualification_id) {
-      const { data: reqs } = await supabase
-        .from("qualification_lln_requirements")
-        .select("domain, minimum_acsf_level")
-        .eq("qualification_id", inv.qualification_id);
-      requirements = reqs || [];
+    // Course requirements: only the RTO's APPROVED mapping for this
+    // learner's own qualification. No library or fallback levels.
+    let requirements: QualificationRequirement[] = [];
+    let approvals: ApprovalRecord[] = [];
+    const qualificationOrganisation: string | null = inv.qualification?.organisation_id ?? null;
+    const sameOrganisation = !!inv.qualification_id && qualificationOrganisation === inv.organisation_id;
+    if (inv.qualification_id && sameOrganisation) {
+      const [{ data: reqs, error: reqErr }, { data: approvalRows, error: approvalErr }] = await Promise.all([
+        supabase.from("qualification_lln_requirements")
+          .select("domain, acsf_skill, minimum_acsf_level")
+          .eq("qualification_id", inv.qualification_id),
+        supabase.from("qualification_mapping_approvals")
+          .select("id, decision, requirements_snapshot, source_release, decided_at")
+          .eq("organisation_id", inv.organisation_id)
+          .eq("qualification_id", inv.qualification_id)
+          .order("decided_at", { ascending: false }).limit(10),
+      ]);
+      // Anything that can't be read counts as not approved (fail closed).
+      requirements = reqErr ? [] : (reqs ?? []);
+      approvals = approvalErr ? [] : (approvalRows ?? []);
+    }
 
-      if (requirements.length === 0) {
-        const { data: libEntry } = await supabase
-          .from("qualification_mapping_library")
-          .select("reading_level, writing_level, numeracy_level, oral_comm_level, learning_level, digital_level")
-          .eq("id", inv.qualification?.axcelerate_course_id ? inv.qualification.axcelerate_course_id : null)
-          .maybeSingle();
-
-        if (libEntry) {
-          const domainMap: Record<string, number | undefined> = {
-            reading: libEntry.reading_level,
-            writing: libEntry.writing_level,
-            numeracy: libEntry.numeracy_level,
-            oral: libEntry.oral_comm_level,
-            learning: libEntry.learning_level,
-            digital: libEntry.digital_level,
-          };
-          requirements = Object.entries(domainMap)
-            .filter(([, v]) => v != null)
-            .map(([domain, minimum_acsf_level]) => ({ domain, minimum_acsf_level: minimum_acsf_level! }));
-        }
+    // Pass mark of the Digital assessment this learner actually sat.
+    let digitalPassMark: number | null = null;
+    if (inv.digital_status === "completed") {
+      const { data: links } = await supabase
+        .from("invitation_assessments")
+        .select("assessments(type, pass_threshold)")
+        .eq("invitation_id", invitation_id);
+      for (const row of links ?? []) {
+        const a = Array.isArray((row as any).assessments) ? (row as any).assessments[0] : (row as any).assessments;
+        if (a?.type === "digital" && typeof a.pass_threshold === "number") { digitalPassMark = a.pass_threshold; break; }
       }
     }
 
-    const { recommendation, reasons, riskFlags } = computeRecommendation(
-      inv.lln_acsf_outcomes as Record<string, number> | null,
-      inv.digital_score as number | null,
-      requirements,
-    );
+    const { recommendation, reasons, riskFlags } = computeCompletionOutcome({
+      llnOutcomes: inv.lln_acsf_outcomes,
+      llnCompleted: inv.lln_status === "completed",
+      digitalScore: inv.digital_score,
+      digitalCompleted: inv.digital_status === "completed",
+      digitalPassMark,
+      course: {
+        qualificationId: inv.qualification_id ?? null,
+        sameOrganisation,
+        approval: mappingApprovalState({
+          approvals,
+          requirements,
+          changeDetectedAt: inv.qualification?.mapping_change_detected_at ?? null,
+        }),
+        requirements,
+      },
+    });
 
-    await supabase
+    // The result itself is never changed here. Outcomes other than
+    // "suitable" open a support case for RTO staff (database trigger); no
+    // assessment is reissued and no enrolment is changed.
+    // Idempotent: only the first completion run records an outcome.
+    const { data: recorded, error: recordError } = await supabase
       .from("assessment_invitations")
       .update({ course_recommendation: recommendation, recommendation_reasons: reasons })
-      .eq("id", invitation_id);
+      .eq("id", invitation_id)
+      .eq("organisation_id", inv.organisation_id)
+      .is("course_recommendation", null)
+      .select("id");
+    if (recordError) throw new Error(`Could not record the completion outcome: ${recordError.message}`);
+    if (!recorded || recorded.length === 0) {
+      return new Response(
+        JSON.stringify({ message: "Completion already processed" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     // Update student status
     if (inv.student_id) {
-      const studentStatus = recommendation === "suitable" ? "digital_complete"
-        : recommendation === "suitable_with_support" ? "support_generated"
-        : "digital_complete";
+      const studentStatus = recommendation === "suitable_with_support" ? "support_generated" : "digital_complete";
       await supabase.from("students")
         .update({ current_status: studentStatus })
+        .eq("organisation_id", inv.organisation_id)
         .eq("id", inv.student_id);
       await supabase.from("student_lifecycle_events").insert({
         student_id: inv.student_id,
@@ -274,10 +212,11 @@ Deno.serve(async (req: Request) => {
       suitable: "SUITABLE — No additional support required",
       suitable_with_support: "SUITABLE WITH SUPPORT — Support plan recommended",
       not_yet_suitable: "NOT YET SUITABLE — Significant support required",
+      requirements_not_confirmed: "REQUIREMENTS NOT CONFIRMED — RTO review required",
     };
-    const urgency = recommendation === "not_yet_suitable";
+    const urgency = recommendation === "not_yet_suitable" || recommendation === "requirements_not_confirmed";
     const subject = urgency
-      ? `⚠ Action Required: ${inv.candidate_name} requires intervention — ${orgName}`
+      ? `⚠ Action Required: ${inv.candidate_name} — ${recommendation === "not_yet_suitable" ? "requires intervention" : "results need RTO review"} — ${orgName}`
       : `Assessment Completed: ${inv.candidate_name} — ${orgName}`;
     const recBadgeColor = urgency ? "#dc2626" : recommendation === "suitable_with_support" ? "#d97706" : "#059669";
 

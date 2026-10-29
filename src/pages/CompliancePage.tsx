@@ -274,6 +274,7 @@ export function CompliancePage() {
       suitable: 0,
       suitable_with_support: 0,
       not_yet_suitable: 0,
+      requirements_not_confirmed: 0,
       overridden: 0,
       pending: 0,
     };

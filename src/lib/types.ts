@@ -16,7 +16,7 @@ export type StudentStatus =
   | 'digital_invitation_sent' | 'digital_opened' | 'awaiting_submission'
   | 'lln_complete' | 'digital_complete' | 'support_generated' | 'closed';
 export type IndividualStatus = 'pending' | 'opened' | 'in_progress' | 'completed';
-export type CourseRecommendation = 'suitable' | 'suitable_with_support' | 'not_yet_suitable';
+export type CourseRecommendation = 'suitable' | 'suitable_with_support' | 'not_yet_suitable' | 'requirements_not_confirmed';
 
 export type NotificationType =
   | 'sent' | 'reminder' | 'completed' | 'overdue'
@@ -453,12 +453,14 @@ export const RECOMMENDATION_COLORS: Record<CourseRecommendation, string> = {
   suitable: 'bg-emerald-100 text-emerald-700',
   suitable_with_support: 'bg-amber-100 text-amber-700',
   not_yet_suitable: 'bg-rose-100 text-rose-700',
+  requirements_not_confirmed: 'bg-slate-200 text-slate-700',
 };
 
 export const RECOMMENDATION_LABELS: Record<CourseRecommendation, string> = {
   suitable: 'Suitable',
   suitable_with_support: 'Suitable with Support',
   not_yet_suitable: 'Not Yet Suitable',
+  requirements_not_confirmed: 'Requirements Not Confirmed — RTO Review',
 };
 
 // ─── Mapping Evidence ───────────────────────────────────────────────────────

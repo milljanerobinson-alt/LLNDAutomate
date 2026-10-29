@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { enrolmentDecision } from "../_shared/enrolment-policy.ts";
 import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
@@ -80,6 +81,7 @@ function buildNoteForEvent(
         suitable: "SUITABLE — No additional support required",
         suitable_with_support: "SUITABLE WITH SUPPORT — Support plan recommended",
         not_yet_suitable: "NOT YET SUITABLE — Significant support required",
+        requirements_not_confirmed: "REQUIREMENTS NOT CONFIRMED — RTO review required",
       };
       const lines = [
         "✅ LLND Automate ASSESSMENT COMPLETED",
@@ -261,34 +263,15 @@ async function performWriteback(
     return { success: false, error: "Could not resolve aXcelerate contact ID" };
   }
 
-  // 2. Enroll in course (invitation_sent + assessment_completed only)
-  if (["invitation_sent", "assessment_completed"].includes(eventType)) {
-    const courseId = invitation.qualification?.axcelerate_course_id;
-    if (courseId) {
-      try {
-        const instanceRes = await fetch(`${apiBaseUrl}/course/instance/search`, {
-          method: "POST",
-          headers,
-          body: new URLSearchParams({ courseID: String(courseId) }),
-        });
-        const instanceData = await instanceRes.json().catch(() => ([]));
-        await logSync("course_instance_search", { courseID: courseId }, instanceData, instanceRes.ok ? "success" : "failed");
-
-        if (instanceRes.ok && Array.isArray(instanceData) && instanceData.length > 0) {
-          const instanceId = instanceData[0].instanceID || instanceData[0].INSTANCEID;
-          const enrolRes = await fetch(`${apiBaseUrl}/course/enrol`, {
-            method: "POST",
-            headers,
-            body: new URLSearchParams({ contactID: String(contactId), instanceID: String(instanceId) }),
-          });
-          const enrolData = await enrolRes.json().catch(() => ({}));
-          await logSync("enrol", { contactID: contactId, instanceID: instanceId }, enrolData, enrolRes.ok ? "success" : "failed");
-        }
-      } catch (_) {
-        // Enrollment failure is non-fatal — continue to write the note
-      }
-    }
-  }
+  // 2. Enrolment: LLND never creates or changes an aXcelerate enrolment for
+  // an invitation or completion (see _shared/enrolment-policy.ts). The
+  // decision is logged so it stays traceable.
+  const enrolment = enrolmentDecision({
+    eventType,
+    axcelerateEnrolmentId: null,
+    axcelerateCourseId: invitation.qualification?.axcelerate_course_id ?? null,
+  });
+  if (enrolment.log) await logSync("enrol", enrolment.log, null, "success");
 
   // 3. Load supporting data for the note
   const { data: invAssessments } = await supabase
@@ -337,7 +320,7 @@ async function performWriteback(
       "OUTCOME RECORD",
       `Date: ${fmt(invitation.completed_at)}`,
       `Result: ${rec.replace(/_/g, " ").toUpperCase()}`,
-      `Intervention Required: ${rec === "not_yet_suitable" ? "YES" : "NO"}`,
+      `Intervention Required: ${rec === "not_yet_suitable" ? "YES" : rec === "requirements_not_confirmed" ? "RTO REVIEW REQUIRED" : "NO"}`,
     ].join("\n");
 
     try {

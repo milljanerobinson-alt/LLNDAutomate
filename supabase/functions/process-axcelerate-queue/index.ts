@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { enrolmentDecision } from "../_shared/enrolment-policy.ts";
 import { getIntegrationOrganisationId, isIntegrationStaff } from "../_shared/organisation-access.ts";
 
 const corsHeaders = {
@@ -65,6 +66,7 @@ function buildNote(
         suitable: "SUITABLE — no additional support required",
         suitable_with_support: "SUITABLE WITH SUPPORT — support plan recommended",
         not_yet_suitable: "NOT YET SUITABLE — significant support required",
+        requirements_not_confirmed: "REQUIREMENTS NOT CONFIRMED — RTO review required",
       };
       const rec = invitation.course_recommendation || "unknown";
       const lines = [
@@ -292,37 +294,15 @@ async function processJob(
 
   if (!contactId) return { success: false, error: "Could not resolve aXcelerate contact ID" };
 
-  // Enroll in course for invitation/completion events — but never for a
-  // learner the aXcelerate inbound sync found already enrolled (their
-  // invitation is linked to that enrolment, or the job says so). Enrolling
-  // them in "the first available" course instance would duplicate their
-  // enrolment and progress it without any validity check.
-  const alreadyEnrolledInAxcelerate = !!invitation.enrolment_id || job.extra_data?.skip_enrolment === true;
-  if (alreadyEnrolledInAxcelerate && ["invitation_sent", "quiz_sent", "assessment_completed"].includes(job.event_type)) {
-    await logCall("enrol", { skipped: true, reason: "learner already enrolled in aXcelerate (inbound sync)" }, null, "success");
-  }
-  if (!alreadyEnrolledInAxcelerate && ["invitation_sent", "quiz_sent", "assessment_completed"].includes(job.event_type)) {
-    const courseId = invitation.qualification?.axcelerate_course_id;
-    if (courseId) {
-      try {
-        const ir = await fetch(`${apiBaseUrl}/course/instance/search`, {
-          method: "POST", headers,
-          body: new URLSearchParams({ courseID: String(courseId) }),
-        });
-        const id_ = await ir.json().catch(() => ([]));
-        await logCall("course_instance_search", { courseID: courseId }, id_, ir.ok ? "success" : "failed");
-        if (ir.ok && Array.isArray(id_) && id_.length > 0) {
-          const instanceId = id_[0].instanceID || id_[0].INSTANCEID;
-          const er = await fetch(`${apiBaseUrl}/course/enrol`, {
-            method: "POST", headers,
-            body: new URLSearchParams({ contactID: String(contactId), instanceID: String(instanceId) }),
-          });
-          const ed = await er.json().catch(() => ({}));
-          await logCall("enrol", { contactID: contactId, instanceID: instanceId }, ed, er.ok ? "success" : "failed");
-        }
-      } catch (_) { /* enrollment is non-fatal */ }
-    }
-  }
+  // Enrolment: LLND never creates or changes an aXcelerate enrolment for an
+  // invitation or completion (see _shared/enrolment-policy.ts). The decision
+  // is logged so it stays traceable.
+  const enrolment = enrolmentDecision({
+    eventType: job.event_type,
+    axcelerateEnrolmentId: null,
+    axcelerateCourseId: invitation.qualification?.axcelerate_course_id ?? null,
+  });
+  if (enrolment.log) await logCall("enrol", enrolment.log, null, "success");
 
   // Load supporting data
   const { data: invAssessments } = await supabase
@@ -401,7 +381,7 @@ async function processJob(
       "OUTCOME RECORD",
       `Date: ${fmt(invitation.completed_at)}`,
       `Result: ${rec.replace(/_/g, " ").toUpperCase()}`,
-      `Intervention Required: ${rec === "not_yet_suitable" ? "YES" : "NO"}`,
+      `Intervention Required: ${rec === "not_yet_suitable" ? "YES" : rec === "requirements_not_confirmed" ? "RTO REVIEW REQUIRED" : "NO"}`,
     ].join("\n");
     try {
       const or_ = await fetch(`${apiBaseUrl}/contact/note/`, {
