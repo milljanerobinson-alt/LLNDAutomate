@@ -512,9 +512,10 @@ describe('wiring and enrolment safety', () => {
   });
   it('inbound-sync write-backs never auto-enrol the learner', () => {
     expect(src).toContain('extra_data: { source: "axcelerate_inbound_sync", skip_enrolment: true }');
-    expect(queue).toContain('const alreadyEnrolledInAxcelerate = !!invitation.enrolment_id || job.extra_data?.skip_enrolment === true;');
-    expect(queue).toContain('if (!alreadyEnrolledInAxcelerate && ["invitation_sent", "quiz_sent", "assessment_completed"].includes(job.event_type))');
-    expect(queue).toMatch(/student_id, enrolment_id,/);
+    // P1 (29 Oct 2026) replaced the inbound-only guard with a rule for every
+    // write-back: no automatic enrolment at all (see p1_integration_safety).
+    expect(queue).toContain('const enrolment = enrolmentDecision({');
+    expect(queue).not.toMatch(/course\/instance\/search|\/course\/enrol\b/);
   });
   it('reuse never queues a write-back of its own', () => {
     const reuseBlock = src.slice(src.indexOf('// ── 7. Create invitations'), src.indexOf('// ── 8. Contact note'));
