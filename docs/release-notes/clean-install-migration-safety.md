@@ -13,10 +13,12 @@ Not deployed. No hosted database has been changed.
 - The queue and briefing invokers no longer contain the original project's
   address. They do nothing until an approved base URL is configured.
 - All scheduled jobs are inactive until separately approved.
-- Legacy EIOS GitHub RPCs cannot be called by application users.
+- Legacy EIOS GitHub RPCs (`get_github_token`, all `github_*`) cannot be
+  called by application users.
 - Eight historical migrations that cannot run on an empty database have a
-  reviewed, checksummed clean-install treatment. The historical files are
-  unchanged.
+  reviewed, checksummed clean-install treatment, and one more
+  (20260725230259) runs with the session state it had on the original
+  project. The historical files are unchanged.
 
 ## Migrations
 
