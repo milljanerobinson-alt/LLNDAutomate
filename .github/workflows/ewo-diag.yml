@@ -1,0 +1,159 @@
+# Temporary clean-install rehearsal (throwaway ewo/diag-* branch only; never merged).
+# Everything runs against a disposable local Supabase Postgres 17 database with
+# all outbound container traffic blocked. No hosted project is contacted.
+name: EWO Clean Install Rehearsal
+on:
+  push:
+    branches: ['ewo/**']
+permissions:
+  contents: read
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DB: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      WD: /tmp/wd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: supabase/setup-cli@v1
+        with: { version: 2.122.0 }
+
+      - name: Unit tests (real Vitest)
+        shell: bash
+        run: |
+          set +e
+          npm ci --no-audit --no-fund > /tmp/npmci.log 2>&1
+          npx vitest run src/tests/clean_install_migration_safety.test.ts src/tests/issue040_rto_workspace_access.test.ts src/tests/assessment_result_validity.test.ts src/tests/p1_integration_safety.test.ts --reporter=json --outputFile=/tmp/vitest.json > /tmp/vitest.log 2>&1
+          echo "rc=$?"
+          node -e 'const r=require("/tmp/vitest.json");const f=r.testResults.map(t=>t.name.split("/").pop()+": "+t.assertionResults.filter(a=>a.status==="passed").length+"/"+t.assertionResults.length);const fails=r.testResults.flatMap(t=>t.assertionResults.filter(a=>a.status==="failed").map(a=>a.fullName+" :: "+(a.failureMessages||[]).join(" ").slice(0,200)));console.log("::notice title=VITEST::"+["passed="+r.numPassedTests+" failed="+r.numFailedTests+" total="+r.numTotalTests,...f,...fails].join("%0A"))'
+
+      - name: Start empty local Supabase database (images pulled before network block)
+        run: |
+          mkdir -p $WD && cd $WD && supabase init --force >/dev/null 2>&1 || supabase init
+          cd $WD && supabase db start
+          echo "::notice title=VERSIONS::cli=$(supabase --version) $(psql "$DB" -XAtc 'select version()' | cut -c1-40) pg_cron=$(psql "$DB" -XAtc "select default_version from pg_available_extensions where name='pg_cron'") pg_net=$(psql "$DB" -XAtc "select default_version from pg_available_extensions where name='pg_net'")"
+
+      - name: Block all outbound traffic from containers
+        run: |
+          C=$(docker ps --filter name=supabase_db --format '{{.Names}}' | head -1)
+          if docker exec $C bash -c 'timeout 5 bash -c "</dev/tcp/1.1.1.1/443"' 2>/dev/null; then before=OPEN; else before=BLOCKED; fi
+          sudo iptables -F DOCKER-USER
+          for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8; do sudo iptables -A DOCKER-USER -d $net -j RETURN; done
+          sudo iptables -A DOCKER-USER -j DROP
+          if docker exec $C bash -c 'timeout 5 bash -c "</dev/tcp/1.1.1.1/443"' 2>/dev/null; then after=OPEN; else after=BLOCKED; fi
+          echo "::notice title=EGRESS_FROM_DB_CONTAINER::before_block=$before after_block=$after"
+          [ "$after" = BLOCKED ]
+
+      - name: Assemble migration set with clean-install overrides (for the CLI comparison runs)
+        run: |
+          node -e '
+            const fs=require("fs"),p=require("path");const m=require("./supabase/clean-install/manifest.json");
+            const out="/tmp/assembled";fs.mkdirSync(out,{recursive:true});
+            for(const f of fs.readdirSync("supabase/migrations")) fs.copyFileSync(p.join("supabase/migrations",f),p.join(out,f));
+            for(const o of m.overrides) fs.copyFileSync(p.join("supabase/clean-install",o.override_file),p.join(out,o.migration_file));
+            console.log(fs.readdirSync(out).length)'
+
+      - name: RUN A - real CLI continuous run, historical files unmodified
+        shell: bash
+        run: |
+          set +e
+          rm -rf $WD/supabase/migrations && cp -r supabase/migrations $WD/supabase/migrations
+          cd $WD; start=$(date +%s); supabase db reset > /tmp/runA.log 2>&1; rc=$?; end=$(date +%s)
+          applied=$(psql "$DB" -XAtc "select count(*) from supabase_migrations.schema_migrations" 2>/dev/null)
+          last=$(psql "$DB" -XAtc "select max(version) from supabase_migrations.schema_migrations" 2>/dev/null)
+          jobs=$(psql "$DB" -XAtc "select count(*)||' jobs, '||count(*) filter (where active)||' active' from cron.job" 2>/dev/null)
+          err=$(grep -m1 "ERROR:" /tmp/runA.log | cut -c1-300)
+          echo "::notice title=RUN_A_CLI_UNMODIFIED::rc=$rc seconds=$((end-start)) ledger_rows=$applied last_applied=$last state_at_stop=[$jobs] first_error=[$err] stopped_on=[$(grep -m1 -oE 'Applying migration [0-9]+[^ ]*' /tmp/runA.log | tail -1) ... $(grep -oE 'Applying migration [0-9]+[^ ]*' /tmp/runA.log | tail -1)]"
+
+      - name: RUN B - real CLI continuous run with overrides (per-file transactions)
+        shell: bash
+        run: |
+          set +e
+          rm -rf $WD/supabase/migrations && cp -r /tmp/assembled $WD/supabase/migrations
+          cd $WD; start=$(date +%s); supabase db reset > /tmp/runB.log 2>&1; rc=$?; end=$(date +%s)
+          sleep 75
+          summary=$(psql "$DB" -XAt <<'SQL'
+          select 'ledger_rows='||(select count(*) from supabase_migrations.schema_migrations)
+            ||' jobs='||(select count(*) from cron.job)||' active='||(select count(*) from cron.job where active)
+            ||' job_runs_during_or_after_install='||(select count(*) from cron.job_run_details)
+            ||' runs_blocked_by_guard='||(select count(*) from cron.job_run_details where return_message like '%Outbound HTTP request blocked%')
+            ||' net_queue='||(select count(*) from net.http_request_queue);
+          SQL
+          )
+          echo "::notice title=RUN_B_CLI_WITH_OVERRIDES::rc=$rc seconds=$((end-start)) $summary first_error=[$(grep -m1 -E 'ERROR' /tmp/runB.log | cut -c1-300)]"
+
+      - name: RUN E - individual-file run (each file in its own transaction, with overrides)
+        shell: bash
+        run: |
+          set +e
+          rm -rf $WD/supabase/migrations && mkdir -p $WD/supabase/migrations
+          cd $WD && supabase db reset > /tmp/runE-reset.log 2>&1
+          : > /tmp/runE.tsv
+          for f in $(ls /tmp/assembled | sort); do
+            out=$(psql "$DB" -X -v ON_ERROR_STOP=1 --single-transaction -q -f "/tmp/assembled/$f" 2>&1); rc=$?
+            if [ $rc -eq 0 ]; then echo -e "PASS\t$f" >> /tmp/runE.tsv; else echo -e "FAIL\t$f\t$(echo "$out" | grep -m1 ERROR | cut -c1-200)" >> /tmp/runE.tsv; fi
+          done
+          echo "::notice title=RUN_E_INDIVIDUAL_FILES::total=$(wc -l < /tmp/runE.tsv) pass=$(grep -c ^PASS /tmp/runE.tsv) fail=$(grep -c ^FAIL /tmp/runE.tsv)%0A$(grep ^FAIL /tmp/runE.tsv | tr '\n' '|' | cut -c1-3000)"
+
+      - name: RUN C - single-transaction clean-install bootstrap, verification, isolation, CLI compatibility
+        shell: bash
+        run: |
+          set +e
+          rm -rf $WD/supabase/migrations && mkdir -p $WD/supabase/migrations
+          cd $WD && supabase db reset > /tmp/runC-reset.log 2>&1; cd $GITHUB_WORKSPACE
+          echo "empty_db_public_tables=$(psql "$DB" -XAtc "select count(*) from pg_tables where schemaname='public'")" > /tmp/runC.txt
+          start=$(date +%s)
+          bash scripts/clean-install/bootstrap-database.sh --db-url "$DB" --execute > /tmp/runC.log 2>&1; rc=$?
+          end=$(date +%s)
+          echo "bootstrap_rc=$rc seconds=$((end-start))" >> /tmp/runC.txt
+          echo "::notice title=RUN_C_BOOTSTRAP::$(cat /tmp/runC.txt | tr '\n' ' ') $(grep -E '^migrations=' /tmp/runC.log) first_error=[$(grep -m1 -E 'ERROR' /tmp/runC.log | cut -c1-400)]"
+          echo "::notice title=RUN_C_VERIFY::$(grep -E '^(PASS|FAIL) \|' /tmp/runC.log | cut -c1-230 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3900)"
+          psql "$DB" -X -v ON_ERROR_STOP=1 -f scripts/clean-install/rehearsal-isolation-check.sql > /tmp/iso.log 2>&1; irc=$?
+          echo "::notice title=RUN_C_ISOLATION::rc=$irc%0A$(grep -E '^(PASS|FAIL) \|' /tmp/iso.log | cut -c1-200 | tr '\n' '~' | sed 's/~/%0A/g')$(grep -m1 ERROR /tmp/iso.log | cut -c1-300)"
+          echo "after_isolation organisations=$(psql "$DB" -XAtc 'select count(*) from public.organisations') auth_users=$(psql "$DB" -XAtc 'select count(*) from auth.users')" > /tmp/post.txt
+          sleep 75
+          echo "after_75s job_runs=$(psql "$DB" -XAtc 'select count(*) from cron.job_run_details') active_jobs=$(psql "$DB" -XAtc 'select count(*) from cron.job where active') net_queue=$(psql "$DB" -XAtc 'select count(*) from net.http_request_queue') net_responses=$(psql "$DB" -XAtc 'select count(*) from net._http_response')" >> /tmp/post.txt
+          psql "$DB" -XAtc "select column_name||':'||data_type from information_schema.columns where table_schema='supabase_migrations' and table_name='schema_migrations' order by ordinal_position" | tr '\n' ' ' > /tmp/ledgercols.txt
+          rm -rf /tmp/cli && mkdir -p /tmp/cli/supabase && cp -r supabase/migrations /tmp/cli/supabase/migrations && cp $WD/supabase/config.toml /tmp/cli/supabase/
+          cd /tmp/cli
+          supabase migration list --db-url "$DB" > /tmp/list.log 2>&1; lrc=$?
+          mismatched=$(grep -E '^\s*[0-9]{14}\s*\|\s*\|' /tmp/list.log | wc -l; grep -E '^\s*\|\s*[0-9]{14}' /tmp/list.log | wc -l)
+          supabase db push --db-url "$DB" --dry-run > /tmp/dry.log 2>&1; drc=$?
+          printf "CREATE TABLE public.rehearsal_future_probe (id integer PRIMARY KEY);\nALTER TABLE public.rehearsal_future_probe ENABLE ROW LEVEL SECURITY;\n" > supabase/migrations/29991231000000_rehearsal_future_probe.sql
+          supabase db push --db-url "$DB" --yes > /tmp/push.log 2>&1; prc=$?
+          probe=$(psql "$DB" -XAtc "select (select count(*) from supabase_migrations.schema_migrations where version='29991231000000')||'/'||(to_regclass('public.rehearsal_future_probe') is not null)")
+          echo "::notice title=RUN_C_POST::$(cat /tmp/post.txt | tr '\n' ' ') ledger_columns=[$(cat /tmp/ledgercols.txt)]%0Amigration_list rc=$lrc rows=$(grep -cE '[0-9]{14}[^0-9]+[0-9]{14}' /tmp/list.log) local_only_or_remote_only=[$(echo $mismatched)]%0Adry_run rc=$drc: $(tr '\n' ' ' < /tmp/dry.log | cut -c1-300)%0Afuture_push rc=$prc ledger/table=$probe: $(tr '\n' ' ' < /tmp/push.log | cut -c1-300)"
+
+      - name: RUN D - repeat bootstrap from an empty database and compare schemas
+        shell: bash
+        run: |
+          set +e
+          C=$(docker ps --filter name=supabase_db --format '{{.Names}}' | head -1)
+          snap() { docker exec -e PGPASSWORD=postgres $C pg_dump -h 127.0.0.1 -U postgres -s -n public -n platform_ops --no-owner postgres | grep -v '^--' | grep -v '^$' | grep -vE '^\\(restrict|unrestrict) ' | sha256sum | cut -c1-16;
+                   psql "$DB" -XAtc "select string_agg(jobname||'|'||schedule||'|'||active||'|'||md5(command), ';' order by jobname) from cron.job" | sha256sum | cut -c1-16; }
+          psql "$DB" -XAtc "drop table if exists public.rehearsal_future_probe; delete from supabase_migrations.schema_migrations where version='29991231000000'"
+          s1=$(snap | tr '\n' ' ')
+          rm -rf $WD/supabase/migrations && mkdir -p $WD/supabase/migrations
+          cd $WD && supabase db reset > /tmp/runD-reset.log 2>&1; cd $GITHUB_WORKSPACE
+          bash scripts/clean-install/bootstrap-database.sh --db-url "$DB" --execute > /tmp/runD.log 2>&1; rc=$?
+          s2=$(snap | tr '\n' ' ')
+          echo "::notice title=RUN_D_REPEAT::bootstrap_rc=$rc verify=$(grep -c '^PASS |' /tmp/runD.log)_pass/$(grep -c '^FAIL |' /tmp/runD.log)_fail first_error=[$(grep -m1 'ERROR:' /tmp/runD.log | cut -c1-200)] schema+jobs_hash_run1=[$s1] run2=[$s2] identical=$([ "$s1" = "$s2" ] && echo yes || echo no)"
+          bash scripts/clean-install/bootstrap-database.sh --db-url "$DB" --execute > /tmp/runD2.log 2>&1; rc2=$?
+          echo "::notice title=RUN_D_REFUSES_NON_EMPTY::second_bootstrap_on_same_db rc=$rc2 $(grep -m1 -oE 'clean install refused[^\"]*' /tmp/runD2.log)"
+          bash scripts/clean-install/bootstrap-database.sh --db-url "postgresql://postgres:x@127.0.0.9:1/postgres?application_name=clrsckerimjturebulbk" --execute > /tmp/deny.log 2>&1; drc=$?
+          echo "::notice title=DENYLIST::rc=$drc $(grep -m1 refused /tmp/deny.log)"
+
+      - name: Egress still blocked at end
+        if: always()
+        run: |
+          C=$(docker ps --filter name=supabase_db --format '{{.Names}}' | head -1)
+          if docker exec $C bash -c 'timeout 5 bash -c "</dev/tcp/1.1.1.1/443"' 2>/dev/null; then r=OPEN; else r=BLOCKED; fi
+          echo "::notice title=EGRESS_AT_END::$r"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clean-install-rehearsal
+          path: /tmp/*.log
