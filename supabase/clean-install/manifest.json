@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "description": "Clean-install treatment of historical migrations that cannot be replayed verbatim on an empty database. Used only by scripts/clean-install/build-bootstrap.mjs. Historical migration files are never modified.",
+  "denied_project_refs": [
+    "clrsckerimjturebulbk"
+  ],
+  "single_transaction": {
+    "removed_statements": [
+      "top-level BEGIN;",
+      "top-level COMMIT;"
+    ],
+    "reason": "The whole clean install runs as one transaction so that no scheduled job or queued request becomes visible until every migration, including 20261031090000, has run. Files that wrap themselves in BEGIN/COMMIT would otherwise commit early."
+  },
+  "overrides": [
+    {
+      "version": "20260712095937",
+      "migration_file": "20260712095937_20260712_ewo009_1_memory_seed_canonical.sql",
+      "override_file": "overrides/20260712095937.sql",
+      "treatment": "environment_specific_data_not_replayed",
+      "original_sha256": "5e8f3251c0d2871e1093d8b8dfb233ed4597cf8ce8a6fd66144ef1f12aad83bd",
+      "override_sha256": "c89ed63e231ae37ffa7f3c1f91d86540551476d694cf198941a166ff1177d0d3",
+      "fresh_install_failure": "INSERT INTO engineering_memory inside the DO block (lines 19-223; error reported at line 223): foreign key engineering_memory_record_id_fkey. The rows reference engineering_records_library records (BATCH-A, BUG-BF-001, ERC-001 ... EWO-007R.1) that no migration creates.",
+      "original_purpose": "Seeded 33 EIOS engineering-memory entries and lineage links describing engineering records that existed only in the original project.",
+      "effects_retained": [],
+      "effects_not_replayed": [
+        "engineering_memory: 33 knowledge rows",
+        "engineering_record_lineage: delete + insert of lineage links",
+        "engineering_records_library: engineering_memory_extracted flag update"
+      ]
+    },
+    {
+      "version": "20260722093701",
+      "migration_file": "20260722093701_20260722120000_ewo021r6r1_repair_ewo014_7e_lineage.sql.sql",
+      "override_file": "overrides/20260722093701.sql",
+      "treatment": "environment_specific_data_not_replayed",
+      "original_sha256": "27723b046fb690e79ba24f0fc4ad7f1076c1add67a83c80e1462363be7d73ba1",
+      "override_sha256": "04d0848d265266860bb1bfa45187c9446d0412a225a4c0be46f5774268898fda",
+      "fresh_install_failure": "INSERT INTO engineering_integrity_reconciliation_events (line 62): foreign key to an engineering integrity alert (65f76fe6...) that exists only in the original project.",
+      "original_purpose": "Repaired the lineage of one specific EIOS integrity alert in the original project and recorded the repair event. The file itself states no schema change was needed.",
+      "effects_retained": [],
+      "effects_not_replayed": [
+        "engineering_integrity_alerts: 2 updates to specific original alerts",
+        "engineering_integrity_reconciliation_events: 1 repair event",
+        "engineering_change_log: 1 audit row"
+      ]
+    },
+    {
+      "version": "20260725073902",
+      "migration_file": "20260725073902_20260725070500_ewo028_phase_closeout.sql.sql",
+      "override_file": "overrides/20260725073902.sql",
+      "treatment": "schema_effects_only",
+      "original_sha256": "f9acf759cbb83f10e5cc1e9a63c4d413bf7841c4351c9d033e339b29222b9227",
+      "override_sha256": "ff4b2340ac9eccceceabb213333880bbe1a5462ea6dbe9b44d064fc668ed40b0",
+      "fresh_install_failure": "INSERT INTO lifecycle_reconciliation_log (line 345): foreign key to EWO-017R.2R / reconciliation records that exist only in the original project.",
+      "original_purpose": "Added the \"correction\" reconciliation type, then closed out EWO-028 with completion reports, Product Owner acceptance and knowledge-extraction records from the original project.",
+      "effects_retained": [
+        "lifecycle_reconciliation_log_reconciliation_type_check constraint now allows \"correction\" (identical to 20260725073913, which also applies it)"
+      ],
+      "effects_not_replayed": [
+        "engineering_work_orders: register EWO-028R.1 / R.2 and close EWO-028",
+        "ewo_completion_reports, ewo_lifecycle_events: closeout and Product Owner acceptance records",
+        "engineering_knowledge_extractions, engineering_knowledge_provenance, engineering_memory, engineering_records_library: knowledge extraction",
+        "lifecycle_reconciliation_log, engineering_change_log: reconciliation correction and audit rows"
+      ]
+    },
+    {
+      "version": "20260725073951",
+      "migration_file": "20260725073951_20260725070502_ewo028_phase_closeout.sql.sql",
+      "override_file": "overrides/20260725073951.sql",
+      "treatment": "environment_specific_data_not_replayed",
+      "original_sha256": "b2a13490e38560ce072e7c7201b3222680812d4482b402b52d257028735affb0",
+      "override_sha256": "a617f5ef63a17991e7b15040cad22980b891871561fb1282803a8490ec661c41",
+      "fresh_install_failure": "INSERT INTO lifecycle_reconciliation_log (line 317): same foreign key failure as 20260725073902.",
+      "original_purpose": "Second copy of the EWO-028 closeout data (without the constraint change). Data only.",
+      "effects_retained": [],
+      "effects_not_replayed": [
+        "Same EWO-028 closeout, acceptance, knowledge-extraction and reconciliation rows as 20260725073902"
+      ]
+    },
+    {
+      "version": "20260801092711",
+      "migration_file": "20260801092711_20260801000000_ewo048_create_eios_platform_project.sql",
+      "override_file": "overrides/20260801092711.sql",
+      "treatment": "schema_effects_only",
+      "original_sha256": "3d748a2becab28a8944d213ec3ce33b726b180865e2255dd435810587522832f",
+      "override_sha256": "58419bb4e2eec350cb0e6ae5798ed7895cf2cb5e892cf4c66d752920a402b4c0",
+      "fresh_install_failure": "INSERT INTO ecc_projects (line 74): foreign key ecc_projects_tenant_id_fkey, EIOS tenant acbcfa81-... exists only in the original project.",
+      "original_purpose": "Created the \"EIOS Platform\" engineering project for the original EIOS tenant, linked the original repository configuration to it, and widened the ecc_projects SELECT policy to tenant members.",
+      "effects_retained": [
+        "function public.tenant_member_can_read_projects()",
+        "policy authenticated_select_projects on ecc_projects (staff, or member of the owning tenant)"
+      ],
+      "effects_not_replayed": [
+        "ecc_projects: \"EIOS Platform\" row for the original EIOS tenant",
+        "github_repository_config: relink of the original EIOS repository row",
+        "engineering_change_log: 1 audit row"
+      ]
+    },
+    {
+      "version": "20260802230228",
+      "migration_file": "20260802230228_ewo049_restore_canonical_numbering_policy.sql",
+      "override_file": "overrides/20260802230228.sql",
+      "treatment": "repaired_export_defect",
+      "original_sha256": "5ebd7b4c469aab763ee8429088b8ae8948a8c6a5128e954eaee7f30ec1650a95",
+      "override_sha256": "239a54f9db63cbe2f68d48be136ba60c343df4b4843da379225ff5b66f07948d",
+      "fresh_install_failure": "Syntax error at \"this\" (line 88): a comment line was split after its semicolon, so the text \"this binding is stale.\" became a SQL statement.",
+      "original_purpose": "Removed stale EIOS reservation/binding rows and reset the EWO reference sequence to 46.",
+      "effects_retained": [
+        "All statements, executed verbatim. Only the split comment line is rejoined (1 line changed)."
+      ],
+      "effects_not_replayed": []
+    },
+    {
+      "version": "20260804050844",
+      "migration_file": "20260804050844_20260804000000_ewo047r2_fix_project_id_type_cast.sql.sql",
+      "override_file": "overrides/20260804050844.sql",
+      "treatment": "repaired_export_defect",
+      "original_sha256": "d3f42f67de8171138069e5d491805ca31a500f8aaaf556de4e02d8cf204bafcd",
+      "override_sha256": "7e9136058d3ec4f7528379ddb149623f4b1c709e94cccf10c0ca3edc1af47cc9",
+      "fresh_install_failure": "Syntax error at \"is\" (line 382, reported at the end of the function body): a comment line inside public.start_governed_execution was split after its semicolon, so \"v_ewo.project_id is uuid.\" became PL/pgSQL code.",
+      "original_purpose": "Final definition of public.start_governed_execution (EIOS) with an explicit uuid-to-text cast in the repository drift check.",
+      "effects_retained": [
+        "All statements, executed verbatim. Only the split comment line is rejoined (1 line changed)."
+      ],
+      "effects_not_replayed": []
+    },
+    {
+      "version": "20260804100038",
+      "migration_file": "20260804100038_ewo047r4_restore_conversation_association.sql.sql",
+      "override_file": "overrides/20260804100038.sql",
+      "treatment": "environment_specific_data_not_replayed",
+      "original_sha256": "0275634a712c6ce47cfe2d88a89d1b92f24aead08e9a9c40bada442c700073e3",
+      "override_sha256": "09ca16f15c492f1979682fb16d01ce4a6c331c621348c73e622b22953b4cb5d7",
+      "fresh_install_failure": "INSERT INTO engineering_conversation_associations (line 18): foreign key to an EWO-047 conversation/work order that exists only in the original project.",
+      "original_purpose": "Restored one EIOS conversation association (conversation 208bd22f-...) in the original project.",
+      "effects_retained": [],
+      "effects_not_replayed": [
+        "engineering_conversation_associations: 1 row"
+      ]
+    }
+  ]
+}
