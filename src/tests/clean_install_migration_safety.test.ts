@@ -62,6 +62,8 @@ describe('clean-install: ordering of the safety migrations', () => {
     expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.invoke_scheduled_briefings\(\)/);
     expect(sql).toMatch(/functions still embed a Supabase project address/);
     expect(sql).toMatch(/scheduled job\(s\) are still active/);
+    expect(sql).toMatch(/p\.proname LIKE 'github\\_%'/);
+    expect(sql).toMatch(/legacy GitHub RPCs are still executable by application users/);
     expect(withoutComments(sql)).not.toMatch(/INSERT INTO platform_ops\.(runtime_config|outbound_request_allowlist)/i);
     expect(sql).not.toMatch(/https:\/\/[a-z0-9]+\.supabase\.co/i);
   });

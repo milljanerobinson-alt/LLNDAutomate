@@ -152,9 +152,7 @@ BEGIN
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
-      AND (p.proname = 'get_github_token' OR p.proname IN (
-        'github_init_repo', 'github_create_tree', 'github_create_commit',
-        'github_update_ref', 'github_get_branch', 'github_verify_repo'))
+      AND (p.proname = 'get_github_token' OR p.proname LIKE 'github\_%')
   LOOP
     EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', f.sig);
     EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM anon, authenticated', f.sig);
@@ -176,6 +174,18 @@ BEGIN
     AND p.prosrc ~* '[a-z0-9-]+\.supabase\.co';
   IF v_offenders IS NOT NULL THEN
     RAISE EXCEPTION 'functions still embed a Supabase project address: %', v_offenders;
+  END IF;
+
+  SELECT string_agg(p.oid::regprocedure::text, ', ' ORDER BY 1)
+  INTO v_offenders
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND (p.proname = 'get_github_token' OR p.proname LIKE 'github\_%')
+    AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+         OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+  IF v_offenders IS NOT NULL THEN
+    RAISE EXCEPTION 'legacy GitHub RPCs are still executable by application users: %', v_offenders;
   END IF;
 
   IF to_regclass('cron.job') IS NOT NULL THEN
