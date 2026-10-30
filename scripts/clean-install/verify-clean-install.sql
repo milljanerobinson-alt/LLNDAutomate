@@ -70,7 +70,7 @@ SELECT 'references: original project ref absent from functions, views, defaults,
 -- 4. Outbound requests --------------------------------------------------------------
 INSERT INTO ci_check (name, ok, detail)
 SELECT 'egress: allowlist trigger installed and enabled on net.http_request_queue',
-       count(*) = 1, coalesce(string_agg(tgname || ' enabled=' || tgenabled, ', '), 'missing')
+       count(*) = 1, coalesce(string_agg(tgname || ' enabled=' || tgenabled::text, ', '), 'missing')
 FROM pg_trigger WHERE tgrelid = 'net.http_request_queue'::regclass
   AND tgname = 'platform_ops_outbound_request_allowlist' AND tgenabled = 'O';
 
