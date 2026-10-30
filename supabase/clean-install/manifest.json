@@ -138,5 +138,18 @@
         "engineering_conversation_associations: 1 row"
       ]
     }
+  ],
+  "session_emulations": [
+    {
+      "version": "20260725230259",
+      "migration_file": "20260725230259_ewo030r3_correct_unauthorised_acceptance.sql",
+      "treatment": "session_state_emulation",
+      "original_sha256": "a9d0f421a7f662c3236d6ae24806121397f6e86d0ec96a8a2e8a6164cb078ef0",
+      "settings": {
+        "app.bypass_lifecycle_validation": "true"
+      },
+      "fresh_install_failure": "UPDATE engineering_work_orders (EWO-030R.2 closed -> po_acceptance): \"Governed lifecycle violation\". The trigger enforce_ewo_lifecycle_transition skips validation when current_setting('app.bypass_lifecycle_validation', true) is NULL, which is the case in a fresh database session. The original project applied this file in its own session, so validation was skipped. In one long install session the setting is already defined (by 20260722023317 / 20260722024511), so validation runs and fails.",
+      "reason": "Reproduce the original fresh-session behaviour for this one file by setting app.bypass_lifecycle_validation = true for that file only (transaction-local, reset before the next file). The file itself runs verbatim. It is the only NULL-sensitive session check in the history."
+    }
   ]
 }

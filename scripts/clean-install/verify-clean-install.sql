@@ -28,7 +28,9 @@ SELECT 'provenance: one single-transaction install run recorded',
 FROM platform_ops.clean_install_runs;
 
 INSERT INTO ci_check (name, ok, detail)
-SELECT 'provenance: 8 historical overrides recorded', count(*) = 8,
+SELECT 'provenance: 8 content overrides and 1 session emulation recorded',
+       count(*) FILTER (WHERE treatment <> 'session_state_emulation') = 8
+   AND count(*) FILTER (WHERE treatment = 'session_state_emulation') = 1,
        string_agg(version || ':' || treatment, ', ' ORDER BY version)
 FROM platform_ops.clean_install_overrides;
 

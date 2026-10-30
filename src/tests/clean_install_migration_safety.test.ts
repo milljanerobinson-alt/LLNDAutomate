@@ -169,7 +169,7 @@ describe('clean-install: single-transaction bootstrap builder', () => {
   });
 
   it('applies the eight overrides and leaves every other migration verbatim', () => {
-    const overridden = built.report.filter((r: { treatment: string }) => r.treatment !== 'verbatim');
+    const overridden = built.report.filter((r: { treatment: string }) => r.treatment !== 'verbatim' && r.treatment !== 'session_state_emulation');
     expect(overridden.map((r: { version: string }) => r.version).sort()).toEqual(manifest.overrides.map((o) => o.version).sort());
     expect(built.sql).toContain('clean install: 20260712095937 not replayed');
     expect(built.sql).toContain("INSERT INTO platform_ops.clean_install_runs (source_commit, manifest_sha256, migration_count, transaction_mode) VALUES ('abcdef1234567'");
@@ -179,6 +179,25 @@ describe('clean-install: single-transaction bootstrap builder', () => {
     const tx = built.report.filter((r: { removedTransactionControl: number }) => r.removedTransactionControl > 0);
     expect(tx.length).toBeGreaterThanOrEqual(8);
     for (const r of tx) expect(r.removedTransactionControl).toBe(2);
+  });
+
+  it('emulates the original per-session behaviour for exactly one file, for that file only', () => {
+    const emulated = built.report.filter((r: { treatment: string }) => r.treatment === 'session_state_emulation');
+    expect(emulated.map((r: { version: string }) => r.version)).toEqual(['20260725230259']);
+    const at = built.sql.indexOf("\\echo '[335/");
+    const block = built.sql.slice(at, built.sql.indexOf('\\echo', at + 10));
+    expect(block).toContain("SELECT pg_catalog.set_config('app.bypass_lifecycle_validation', 'true', true);");
+    // The setting is transaction-local and RESET ALL runs before the next file.
+    expect(built.sql.slice(built.sql.indexOf('\\echo', at + 10)).split('\n')[1]).toBe('RESET ALL;');
+    expect((built.sql.match(/set_config\('app\.bypass_lifecycle_validation', 'true', true\);\n\/\*/g) ?? []).length).toBe(2);
+  });
+
+  it('the only NULL-sensitive session check in the history is the lifecycle trigger that the emulation covers', () => {
+    const checks = new Set<string>();
+    for (const f of files) {
+      for (const m of read(path.join(MIGRATIONS, f)).matchAll(/current_setting\('([a-z_.]+)', *true\)\s*(!=|<>)/g)) checks.add(m[1]);
+    }
+    expect([...checks]).toEqual(['app.bypass_lifecycle_validation']);
   });
 
   it('refuses to run against a non-empty database', () => {

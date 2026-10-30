@@ -110,14 +110,15 @@ CREATE TABLE IF NOT EXISTS platform_ops.clean_install_overrides (
   treatment          text NOT NULL CHECK (treatment IN (
                        'repaired_export_defect',
                        'schema_effects_only',
-                       'environment_specific_data_not_replayed')),
+                       'environment_specific_data_not_replayed',
+                       'session_state_emulation')),
   original_sha256    text NOT NULL,
   executed_sha256    text NOT NULL,
   reason             text NOT NULL,
   recorded_at        timestamptz NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE platform_ops.clean_install_overrides IS
-  'Historical migrations whose content was not executed verbatim in a clean install, with the treatment, checksums and reason (see supabase/clean-install/manifest.json).';
+  'Historical migrations that a clean install did not execute exactly as they ran on the original project (content override or session-state emulation), with the treatment, checksums and reason (see supabase/clean-install/manifest.json).';
 
 REVOKE ALL ON ALL TABLES IN SCHEMA platform_ops FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA platform_ops FROM anon, authenticated;
