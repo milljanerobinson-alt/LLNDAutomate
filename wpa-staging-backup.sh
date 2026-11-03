@@ -123,7 +123,7 @@ docker exec "$RESTORE_CTR" psql -U postgres -XAtq -v ON_ERROR_STOP=1 -c "
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN EXECUTE format('CREATE ROLE %I NOLOGIN', r); END IF;
     END LOOP; END \$\$;" >/dev/null
 docker exec "$RESTORE_CTR" createdb -U postgres restore_verify
-docker exec "$RESTORE_CTR" psql -U postgres -d restore_verify -XAtq -c "CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" WITH SCHEMA extensions;" >/dev/null
+docker exec "$RESTORE_CTR" psql -U postgres -d restore_verify -XAtq -c "CREATE SCHEMA IF NOT EXISTS auth; CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions; CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" WITH SCHEMA extensions;" >/dev/null
 set +e
 docker exec "$RESTORE_CTR" pg_restore -U postgres -d restore_verify --no-owner --no-privileges -n public -n auth \
   "/backup/$DUMP_NAME" > /dev/null 2> "$VOL/restore-errors.log"
