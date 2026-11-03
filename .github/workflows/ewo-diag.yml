@@ -87,9 +87,9 @@ jobs:
           psql "$ADMIN" -Xqc "alter table public.licences add column licence_class text"
           run S6_production_marker "$GOOD" "$TESTPW"
           psql "$ADMIN" -Xqc "alter table public.licences drop column licence_class"
-          psql "$ADMIN" -Xq -c "create schema locked; create table locked.secret_stuff (id int); insert into locked.secret_stuff values (1); revoke all on schema locked from public, postgres, \"postgres.bybccpuosrvgwujapasm\"; revoke all on locked.secret_stuff from public, postgres, \"postgres.bybccpuosrvgwujapasm\";"
+          psql "$ADMIN" -Xq -c "select lo_from_bytea(0, '\\x7365637265742d6c6f'::bytea);"
           run S7_partial_export "$GOOD" "$TESTPW"; cp /tmp/evidence/MANIFEST.txt /tmp/s7-manifest.txt 2>/dev/null
-          psql "$ADMIN" -Xqc "drop schema locked cascade"
+          psql "$ADMIN" -Xqc "select lo_unlink(oid) from pg_largeobject_metadata"
           psql "$ADMIN" -Xq -c "create extension if not exists citext with schema extensions; set role postgres; create table public.uses_citext (id int, email extensions.citext); insert into public.uses_citext values (1,'a@example.test');"
           run S8_restore_error "$GOOD" "$TESTPW"; cp /tmp/evidence/MANIFEST.txt /tmp/s8-manifest.txt 2>/dev/null
           psql "$ADMIN" -Xqc "drop table public.uses_citext"
