@@ -109,7 +109,7 @@ OBJECTS="$(docker run --rm -v "$VOL":/backup:ro "$PG_IMAGE" pg_restore --list "/
 echo "OK: export written ($SIZE bytes, $OBJECTS archive entries)."
 
 say "Step 4/6  Restoring into an isolated local database (no network)"
-LOCALPW="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+LOCALPW="$(head -c 48 /dev/urandom | shasum -a 256 | cut -c1-40)"
 docker run -d --rm --name "$RESTORE_CTR" --network none -e POSTGRES_PASSWORD="$LOCALPW" \
   -v "$VOL":/backup:ro "$PG_IMAGE" >/dev/null
 unset LOCALPW
