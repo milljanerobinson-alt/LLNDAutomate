@@ -199,15 +199,15 @@ VOL="$(printf '%s\n' "$ATTACH_OUT" | grep '/Volumes/' | tail -1 | sed 's#.*\(/Vo
 echo "OK: encrypted image mounted."
 
 say "Step 4/7  Exporting Staging (read-only)"
-TABLES_SQL="SELECT n.nspname||'.'||c.relname||'|'||c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+TABLES_SQL="SELECT n.nspname||'.'||c.relname||'|'||c.relkind::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
  WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema')
    AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'
    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
  ORDER BY 1;"
 COUNT_SQL="SELECT n.nspname||'.'||c.relname||'|'||(xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', n.nspname, c.relname), false, true, '')))[1]::text
  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' AND n.nspname IN ('public','auth') ORDER BY 1;"
-ro_query "$TABLES_SQL" > "$VOL/source-tables.txt" || stop "Could not list Staging tables."
-ro_query "$COUNT_SQL"  > "$VOL/source-counts-before.txt" || stop "Could not count Staging rows."
+ro_query "$TABLES_SQL" > "$VOL/source-tables.txt" 2>> "$VOL/query-errors.log" || stop "Could not list Staging tables."
+ro_query "$COUNT_SQL"  > "$VOL/source-counts-before.txt" 2>> "$VOL/query-errors.log" || stop "Could not count Staging rows."
 if pg_remote pg_dump --format=custom --compress=9 --file="/backup/$DUMP_NAME" 2> "$VOL/pg_dump-full.log"; then
   EXPORT_SCOPE="FULL (all schemas)"
 else
@@ -220,7 +220,7 @@ else
     stop "Both the full and the partial export failed (see the pg_dump logs in the image)."
   fi
 fi
-ro_query "$COUNT_SQL" > "$VOL/source-counts-after.txt" || stop "Could not re-count Staging rows."
+ro_query "$COUNT_SQL" > "$VOL/source-counts-after.txt" 2>> "$VOL/query-errors.log" || stop "Could not re-count Staging rows."
 [ -s "$VOL/$DUMP_NAME" ] || stop "The export file is empty."
 SHA="$(cd "$VOL" && shasum -a 256 "$DUMP_NAME" | tee "$DUMP_NAME.sha256" | awk '{print $1}')"
 SIZE="$(stat -f%z "$VOL/$DUMP_NAME")"
