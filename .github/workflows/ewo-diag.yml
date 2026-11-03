@@ -21,7 +21,7 @@ jobs:
         run: |
           mkdir -p /tmp/wd && cd /tmp/wd && (supabase init --force >/dev/null 2>&1 || supabase init) && supabase db start
           psql "$ADMIN" -X -q -v ON_ERROR_STOP=1 -v pw="$TESTPW" <<'SQL'
-          create role "postgres.bybccpuosrvgwujapasm" login password :'pw';
+          create role "postgres.bybccpuosrvgwujapasm" login bypassrls password :'pw';
           grant postgres to "postgres.bybccpuosrvgwujapasm";
           set role postgres;
           create table public.customers (id uuid primary key default gen_random_uuid(), name text);
