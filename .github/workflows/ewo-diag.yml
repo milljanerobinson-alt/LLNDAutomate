@@ -1,6 +1,6 @@
-# Temporary rehearsal of the WP Assist staging backup script against a SYNTHETIC local Supabase DB.
-# Throwaway ewo/diag-* branch; never merged. No hosted project contacted.
-name: EWO Backup Script Rehearsal
+# Temporary rehearsal of wpa-staging-backup.sh v2 against SYNTHETIC local data only.
+# Throwaway ewo/diag-* branch; never merged. No hosted Supabase project is contacted.
+name: EWO Backup Script Rehearsal v2
 on:
   push:
     branches: ['ewo/**']
@@ -9,41 +9,94 @@ permissions:
 jobs:
   rehearse:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    env:
+      ADMIN: postgresql://supabase_admin:postgres@127.0.0.1:54322/postgres
+      TESTPW: 'Te:st\pw#9!'
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with: { version: 2.122.0 }
-      - name: Start synthetic Supabase DB and seed fake data
+      - name: Synthetic Supabase database (fake data only)
         run: |
           mkdir -p /tmp/wd && cd /tmp/wd && (supabase init --force >/dev/null 2>&1 || supabase init) && supabase db start
-          psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -X -q -v ON_ERROR_STOP=1 <<'SQL'
-          create extension if not exists pgcrypto with schema extensions;
-          create table public.licences (id uuid primary key default gen_random_uuid(), label text);
+          psql "$ADMIN" -X -q -v ON_ERROR_STOP=1 -v pw="$TESTPW" <<'SQL'
+          create role "postgres.bybccpuosrvgwujapasm" login password :'pw';
+          grant postgres to "postgres.bybccpuosrvgwujapasm";
+          set role postgres;
+          create table public.customers (id uuid primary key default gen_random_uuid(), name text);
+          create table public.licences (id uuid primary key default gen_random_uuid(), customer_id uuid references public.customers(id), label text);
           create table public.installations (id uuid primary key default gen_random_uuid(), licence_id uuid references public.licences(id), host text);
+          create table public.subscriptions (id uuid primary key default gen_random_uuid(), stripe_status text);
+          create table public.releases (id uuid primary key default gen_random_uuid(), version text);
+          create table public.admin_profiles (user_id uuid primary key, role text);
+          create table public.audit_log (id uuid primary key default gen_random_uuid(), action text, created_at timestamptz default now());
           alter table public.licences enable row level security;
           create policy p on public.licences for select to authenticated using (true);
-          grant select on public.licences to service_role;
-          insert into public.licences(label) select 'fake-'||g from generate_series(1,5) g;
-          insert into public.installations(licence_id, host) select id, 'example.test' from public.licences;
+          insert into public.customers(name) select 'fake-'||g from generate_series(1,4) g;
+          insert into public.licences(customer_id,label) select id,'fake' from public.customers;
+          insert into public.installations(licence_id,host) select id,'example.test' from public.licences;
+          insert into public.subscriptions(stripe_status) values ('active'),('trialing');
+          insert into public.releases(version) values ('1.3.0');
+          insert into public.audit_log(action) select 'x' from generate_series(1,10);
+          reset role;
           insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
           values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000','authenticated','authenticated','fake@example.test','', '{}','{}', now(), now());
+          insert into public.admin_profiles(user_id, role) select id, 'owner' from auth.users;
           SQL
-          ss -ltnp | grep 54322 || true
-      - name: Run the backup script with macOS-only commands stubbed
+      - name: Prepare test copy (only macOS commands stubbed, local host allowed, TLS off)
+        run: |
+          cp wpa-staging-backup.sh /tmp/s.sh
+          sed -i 's/^EXPECTED_HOST_SUFFIX=.*/EXPECTED_HOST_SUFFIX=".17.0.1"/; s/PGSSLMODE=require/PGSSLMODE=disable/' /tmp/s.sh
+          diff wpa-staging-backup.sh /tmp/s.sh || true
+          sudo mkdir -p /Volumes && sudo chmod 777 /Volumes
+          cat > /tmp/stubs.sh <<'STUB'
+          hdiutil() {
+            case "$1" in
+              create) touch "${@: -1}"; echo "created: ${@: -1}";;
+              isencrypted) echo "encrypted: YES";;
+              attach) n=$(basename "${@: -1}" .dmg); v="/Volumes/WPA-Staging-Backup-${n##*-}"; mkdir -p "$v"; echo "/dev/disk9s1	41504653-0000	$v";;
+              detach) rm -rf /tmp/evidence; cp -r "$2" /tmp/evidence; rm -rf "$2";;
+            esac; }
+          stat() { command stat -c%s "${@: -1}"; }
+          export -f hdiutil stat
+          STUB
+      - name: Run scenarios
         shell: bash
         run: |
           set +e
-          sudo mkdir -p /Volumes && sudo chmod 777 /Volumes
-          cp wpa-staging-backup.sh /tmp/s.sh
-          sed -i 's/sslmode=require/sslmode=disable/g' /tmp/s.sh
-          hdiutil() { case "$1" in create) touch "${@: -1}";; attach) n=$(basename "$2" .dmg); mkdir -p "/Volumes/WPA-Staging-Backup-${n##*-}";; detach) cp -r "$2" /tmp/evidence 2>/dev/null; rm -rf "$2";; esac; }
-          stat() { command stat -c%s "${@: -1}"; }
-          export -f hdiutil stat
-          URL='postgresql://postgres:[YOUR-PASSWORD]@172.17.0.1:54322/postgres?application_name=postgres.bybccpuosrvgwujapasm'
-          printf '%s\n%s\n' "$URL" 'postgres' | bash /tmp/s.sh > /tmp/out.txt 2>&1; rc=$?
-          echo "rc=$rc"; cat /tmp/out.txt | tail -40
-          echo "::notice title=SCRIPT_RC::rc=$rc"
-          echo "::notice title=SUMMARY::$(sed -n '/SUMMARY/,$p' /tmp/out.txt | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3000)"
-          echo "::notice title=TAIL::$(tail -25 /tmp/out.txt | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3000)"
-          echo "::notice title=EVIDENCE::$(ls /tmp/evidence 2>&1 | tr '\n' ' ') restore_errors=[$(head -c 1500 /tmp/evidence/restore-errors.log 2>/dev/null | tr '\n' '~' | sed 's/~/%0A/g')] dumplog=[$(cat /tmp/evidence/pg_dump-full.log 2>/dev/null | head -c 800 | tr '\n' ' ')] manifest=[$(cat /tmp/evidence/MANIFEST.txt 2>/dev/null | tr '\n' '~' | sed 's/~/%0A/g')]"
+          source /tmp/stubs.sh
+          GOOD='postgresql://postgres.bybccpuosrvgwujapasm:[YOUR-PASSWORD]@172.17.0.1:54322/postgres'
+          run() {  # name, url, password
+            rm -rf ~/WP-Assist-Backups /tmp/evidence
+            ( while true; do ps -eo args 2>/dev/null; for c in $(docker ps -q); do docker inspect "$c"; done; sleep 0.5; done ) > /tmp/watch-$1.txt 2>&1 & W=$!
+            printf '%s\n%s\n' "$2" "$3" | bash /tmp/s.sh > /tmp/out-$1.txt 2>&1; rc=$?
+            kill $W 2>/dev/null; wait $W 2>/dev/null
+            leak=$(grep -cF "$TESTPW" /tmp/watch-$1.txt /tmp/out-$1.txt 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')
+            secrets=$(ls -d ${TMPDIR:-/tmp}/wpa-secret.* 2>/dev/null | wc -l)
+            imgs=$(ls ~/WP-Assist-Backups/*.dmg 2>/dev/null | wc -l)
+            res=$(grep -m1 '^RESULT:' /tmp/out-$1.txt | sed 's/  */ /g'); why=$(grep -m1 '^Reason:' /tmp/out-$1.txt | cut -c1-150)
+            stopped=$(grep -m1 '^STOPPED:' /tmp/out-$1.txt | cut -c1-150)
+            echo "$1 | rc=$rc | $res | $why | $stopped | image_kept=$imgs | secret_dirs_left=$secrets | password_seen_in_ps_inspect_or_output=$leak" >> /tmp/scen.txt
+          }
+          run S1_happy "$GOOD" "$TESTPW"; cp /tmp/out-S1_happy.txt /tmp/s1.txt; cp /tmp/evidence/MANIFEST.txt /tmp/s1-manifest.txt 2>/dev/null
+          run S2_production_ref 'postgresql://postgres.vcielymjoxwzcuhffjbi:[YOUR-PASSWORD]@172.17.0.1:54322/postgres' "$TESTPW"
+          run S3_wrong_user 'postgresql://postgres.someotherproject:[YOUR-PASSWORD]@172.17.0.1:54322/postgres' "$TESTPW"
+          run S4_txn_pooler 'postgresql://postgres.bybccpuosrvgwujapasm:[YOUR-PASSWORD]@172.17.0.1:6543/postgres' "$TESTPW"
+          run S5_wrong_password "$GOOD" 'not-the-password'
+          psql "$ADMIN" -Xqc "alter table public.licences add column licence_class text"
+          run S6_production_marker "$GOOD" "$TESTPW"
+          psql "$ADMIN" -Xqc "alter table public.licences drop column licence_class"
+          psql "$ADMIN" -Xq -c "create schema locked; create table locked.secret_stuff (id int); insert into locked.secret_stuff values (1); revoke all on schema locked from public;"
+          run S7_partial_export "$GOOD" "$TESTPW"; cp /tmp/evidence/MANIFEST.txt /tmp/s7-manifest.txt 2>/dev/null
+          psql "$ADMIN" -Xqc "drop schema locked cascade"
+          psql "$ADMIN" -Xq -c "create extension if not exists citext with schema extensions; set role postgres; create table public.uses_citext (id int, email extensions.citext); insert into public.uses_citext values (1,'a@example.test');"
+          run S8_restore_error "$GOOD" "$TESTPW"; cp /tmp/evidence/MANIFEST.txt /tmp/s8-manifest.txt 2>/dev/null
+          psql "$ADMIN" -Xqc "drop table public.uses_citext"
+          psql "$ADMIN" -Xqc "drop table public.releases"
+          run S9_required_table_missing "$GOOD" "$TESTPW"
+          echo "::notice title=SCENARIOS::$(cat /tmp/scen.txt | tr '\n' '~' | sed 's/~/%0A/g')"
+          echo "::notice title=S1_SUMMARY::$(sed -n '/SUMMARY/,$p' /tmp/s1.txt | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3500)"
+          echo "::notice title=S7_MANIFEST::$(tr '\n' '~' < /tmp/s7-manifest.txt | sed 's/~/%0A/g' | cut -c1-2500)"
+          echo "::notice title=S8_MANIFEST::$(tr '\n' '~' < /tmp/s8-manifest.txt | sed 's/~/%0A/g' | cut -c1-2500)"
+          echo "::notice title=S1_STEPS::$(grep -E '^(== |OK:|STOPPED)' /tmp/s1.txt | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-2500)"
