@@ -79,7 +79,7 @@ jobs:
             stopped=$(grep -m1 '^STOPPED:' /tmp/out-$1.txt | cut -c1-150)
             echo "$1 | rc=$rc | $res | $why | $stopped | image_kept=$imgs | secret_dirs_left=$secrets | password_seen_in_ps_inspect_or_output=$leak" >> /tmp/scen.txt
           }
-          run S1_happy "$GOOD" "$TESTPW"; cp /tmp/out-S1_happy.txt /tmp/s1.txt; cp /tmp/evidence/MANIFEST.txt /tmp/s1-manifest.txt 2>/dev/null
+          run S1_happy "$GOOD" "$TESTPW"; cp /tmp/out-S1_happy.txt /tmp/s1.txt; cat /tmp/evidence/pg_dump-*.log /tmp/evidence/query-errors.log 2>/dev/null | head -c 1500 > /tmp/s1-logs.txt; cp /tmp/evidence/MANIFEST.txt /tmp/s1-manifest.txt 2>/dev/null
           run S2_production_ref 'postgresql://postgres.vcielymjoxwzcuhffjbi:[YOUR-PASSWORD]@172.17.0.1:54322/postgres' "$TESTPW"
           run S3_wrong_user 'postgresql://postgres.someotherproject:[YOUR-PASSWORD]@172.17.0.1:54322/postgres' "$TESTPW"
           run S4_txn_pooler 'postgresql://postgres.bybccpuosrvgwujapasm:[YOUR-PASSWORD]@172.17.0.1:6543/postgres' "$TESTPW"
@@ -99,4 +99,5 @@ jobs:
           echo "::notice title=S1_SUMMARY::$(sed -n '/SUMMARY/,$p' /tmp/s1.txt | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3500)"
           echo "::notice title=S7_MANIFEST::$(tr '\n' '~' < /tmp/s7-manifest.txt | sed 's/~/%0A/g' | cut -c1-2500)"
           echo "::notice title=S8_MANIFEST::$(tr '\n' '~' < /tmp/s8-manifest.txt | sed 's/~/%0A/g' | cut -c1-2500)"
+          echo "::notice title=S1_LOGS::$(tr '\n' '~' < /tmp/s1-logs.txt | sed 's/~/%0A/g')"
           echo "::notice title=S1_STEPS::$(grep -E '^(== |OK:|STOPPED)' /tmp/s1.txt | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-2500)"
