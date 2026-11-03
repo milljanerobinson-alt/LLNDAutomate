@@ -33,6 +33,7 @@ jobs:
       - name: Run the backup script with macOS-only commands stubbed
         shell: bash
         run: |
+          set +e
           sudo mkdir -p /Volumes && sudo chmod 777 /Volumes
           cp wpa-staging-backup.sh /tmp/s.sh
           sed -i 's/sslmode=require/sslmode=disable/g' /tmp/s.sh
