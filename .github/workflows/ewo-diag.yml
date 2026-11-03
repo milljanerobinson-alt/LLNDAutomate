@@ -47,7 +47,7 @@ jobs:
       - name: Prepare test copy (only macOS commands stubbed, local host allowed, TLS off)
         run: |
           cp wpa-staging-backup.sh /tmp/s.sh
-          sed -i 's/^EXPECTED_HOST_SUFFIX=.*/EXPECTED_HOST_SUFFIX=".17.0.1"/; s/PGSSLMODE=require/PGSSLMODE=disable/' /tmp/s.sh
+          sed -i 's/^EXPECTED_HOST_SUFFIX=.*/EXPECTED_HOST_SUFFIX=".17.0.1"/; s/PGSSLMODE=require/PGSSLMODE=disable/; s/case "$DB_PORT" in 5432)/case "$DB_PORT" in 5432|54322)/' /tmp/s.sh
           diff wpa-staging-backup.sh /tmp/s.sh || true
           sudo mkdir -p /Volumes && sudo chmod 777 /Volumes
           cat > /tmp/stubs.sh <<'STUB'
