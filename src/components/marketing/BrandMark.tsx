@@ -1,5 +1,4 @@
 import { GraduationCap } from 'lucide-react';
-import { PRODUCT_NAME } from '../../lib/brand';
 
 interface BrandMarkProps {
   /** 'dark' for light backgrounds, 'light' for dark backgrounds. */
@@ -20,7 +19,6 @@ export function BrandMark({ tone = 'dark', size = 'md', showDescriptor = false }
       <span className="flex flex-col leading-none text-left">
         <span className={`font-extrabold tracking-tight ${size === 'sm' ? 'text-sm' : 'text-base'} ${tone === 'dark' ? 'text-slate-900' : 'text-white'}`}>
           LLND <span className={tone === 'dark' ? 'text-primary-600' : 'text-primary-300'}>Assess</span>
-          <span className="sr-only"> ({PRODUCT_NAME})</span>
         </span>
         {showDescriptor && (
           <span className={`text-[11px] font-medium mt-1 hidden sm:block ${tone === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>

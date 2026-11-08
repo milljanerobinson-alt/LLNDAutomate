@@ -16,11 +16,10 @@ export function AboutPage({ currentHash }: { currentHash: string }) {
         <div className="max-w-3xl mx-auto">
           <p className="text-sm font-semibold text-primary-700 mb-3">About</p>
           <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-6">About LLND Assess</h1>
-          <p className="text-lg text-slate-600 leading-relaxed mb-4">
+          <p className="text-lg text-slate-600 leading-relaxed">
             LLND Assess helps Australian Registered Training Organisations review prospective learners’ language, literacy,
             numeracy and digital skills, identify who may need support, and keep a clear record of the results.
           </p>
-          <p className="text-lg text-slate-600 leading-relaxed">LLND Assess was previously known as LLND Automate.</p>
         </div>
       </section>
       <section className="px-4 sm:px-6 pb-16" aria-labelledby="principles-heading">

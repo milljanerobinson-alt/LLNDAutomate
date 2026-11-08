@@ -102,9 +102,7 @@ describe('LLND Assess: customer-facing naming', () => {
   it.each(CUSTOMER_FACING_FILES)('%s has no superseded product names in visible text', (rel) => {
     const visible = stripComments(read(rel))
       .replace(/#\/llnd-automate\/login/g, '')
-      .replace(/'llnd-automate'/g, '')
-      // One deliberate transition notice on the About page.
-      .replace('LLND Assess was previously known as LLND Automate.', '');
+      .replace(/'llnd-automate'/g, '');
     expect(visible).not.toMatch(/LLND\s*Automate|LLN\s*Automate|LLND\s*Mate/i);
     expect(visible).not.toMatch(/>\s*Automate\s*</);
   });

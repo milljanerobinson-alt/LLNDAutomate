@@ -48,7 +48,6 @@ Not deployed. No database, Supabase, Cloudflare, DNS, authentication or payment 
 | EIOS prompts mentioning LLND Automate | technical-director, command-centre-ai, generate-platform-audit, generate-engineering-briefing | Internal engineering tools, not customer-facing |
 | `axcelerate-contact-webhook` status message | Edge function | Machine-to-machine response |
 | Historical migrations and EIOS records | supabase/migrations, ECC pages | Audit history must not be rewritten |
-| About page sentence "previously known as LLND Automate" | AboutPage.tsx | Deliberate transition notice for existing users |
 
 ## Dependencies and open items
 

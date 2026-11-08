@@ -93,12 +93,12 @@ test('pricing shows Free as available and paid plans as coming soon', async ({ p
 
 test('staff sign-in still loads from the website', async ({ page }) => {
   await page.goto('/');
-  const signIn = page.getByRole('link', { name: 'Sign In' });
+  const signIn = page.getByRole('link', { name: 'Sign In', exact: true });
   if (await signIn.isVisible()) {
     await signIn.click();
   } else {
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('link', { name: 'Sign In' }).click();
+    await page.getByRole('link', { name: 'Sign In', exact: true }).click();
   }
   await expect(page).toHaveURL(/#\/llnd-automate\/login/);
   await expect(page.locator('body')).toContainText('LLND Assess');
