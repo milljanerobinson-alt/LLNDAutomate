@@ -138,8 +138,8 @@ function generateLlnReport(params: {
   lines.push(
     "",
     D,
-    "This report was generated automatically by the LLND Automate.",
-    "Source: LLND Automate",
+    "This report was generated automatically by LLND Assess.",
+    "Source: LLND Assess",
     D,
   );
 
@@ -188,8 +188,8 @@ function generateDigitalReport(params: {
       : "The learner's digital capability is below the minimum threshold. Additional support or reassessment may be required.",
     "",
     D,
-    "This report was generated automatically by the LLND Automate.",
-    "Source: LLND Automate",
+    "This report was generated automatically by LLND Assess.",
+    "Source: LLND Assess",
     D,
   ];
 
@@ -354,7 +354,7 @@ Deno.serve(async (req: Request) => {
     const apiBaseUrl: string = cfgRes.data?.value?.api_base_url || "";
     const apiToken: string = Deno.env.get("AXCELERATE_API_TOKEN") || (typeof apiTokenRes.data?.value === "string" ? apiTokenRes.data.value : "") || "";
     const wsToken: string = Deno.env.get("AXCELERATE_WS_TOKEN") || (typeof wsTokenRes.data?.value === "string" ? wsTokenRes.data.value : "") || "";
-    const orgName: string = brandRes.data?.value?.name || "LLND Automate";
+    const orgName: string = brandRes.data?.value?.name || "LLND Assess";
 
     if (!apiBaseUrl || !apiToken || !wsToken) {
       return new Response(

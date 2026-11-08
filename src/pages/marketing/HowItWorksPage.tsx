@@ -1,123 +1,93 @@
-import { ArrowRight, Building2, Users, ClipboardList, Brain, Calendar } from 'lucide-react';
-import { TopNav } from '../../components/marketing/TopNav';
-import { Footer } from '../../components/marketing/Footer';
-
-function nav(hash: string) { window.location.href = hash; }
+import { ArrowRight, Building2, ClipboardCheck, GraduationCap, LifeBuoy, Link2, Smartphone } from 'lucide-react';
+import { MarketingShell } from '../../components/marketing/MarketingShell';
+import { PRIMARY_CTA, PRIMARY_OFFER, SIGNUP_HASH } from '../../lib/brand';
 
 const STEPS = [
   {
-    n: 1,
     icon: Building2,
-    title: 'Create your organisation',
-    desc: 'Sign up online in minutes. No sales call, no contract. Enter your RTO name, RTO number and choose a plan. Your 14-day free trial starts immediately.',
-    detail: ['Self-service sign up', 'Choose your plan online', 'No credit card required', 'Start immediately'],
-    color: 'bg-primary-100 text-primary-600',
-    border: 'border-primary-200',
+    title: 'Create your free RTO account',
+    body: 'Register your organisation online. The Free plan includes 10 completed assessments each month and needs no credit card.',
+    points: ['Self-service registration', 'Invite your staff by email', 'Separate Administration, Candidate Support and Technical workspaces'],
   },
   {
-    n: 2,
-    icon: Users,
-    title: 'Invite your trainers',
-    desc: 'Add your training team to the platform. Unlimited trainers are included on every plan — no per-seat fees. Trainers get full access to manage candidates and review results.',
-    detail: ['Unlimited trainers included', 'Email invitations', 'Role-based access', 'Multiple campuses supported'],
-    color: 'bg-teal-100 text-teal-600',
-    border: 'border-teal-200',
+    icon: GraduationCap,
+    title: 'Set the LLND requirements for each course',
+    body: 'For each qualification you deliver, your RTO reviews and approves the LLND requirements that learners’ results are compared against.',
+    points: ['Requirements approved by your staff', 'Approvals are recorded', 'Results are judged against the approved requirements'],
   },
   {
-    n: 3,
-    icon: ClipboardList,
-    title: 'Assess your learners',
-    desc: 'Send assessment invitations by email. Learners complete assessments on any device in around 20 minutes. No account creation required for learners — just a link.',
-    detail: ['Invitation via email', 'Works on any device', 'No learner account needed', 'Progress saved automatically'],
-    color: 'bg-amber-100 text-amber-600',
-    border: 'border-amber-200',
+    icon: Link2,
+    title: 'Invite prospective learners',
+    body: 'Add a learner and send their personal assessment link by email. Learners do not create an account.',
+    points: ['LLN, Digital, or both under one assignment', 'Assessment declaration before starting', 'Reminders for unfinished assessments'],
   },
   {
-    n: 4,
-    icon: Brain,
-    title: 'Download reports instantly',
-    desc: 'As soon as a learner completes their assessment, an AI-generated ACSF-mapped report is ready. Trainers review, approve, and can send support plans to learners in one click.',
-    detail: ['AI-generated reports', 'ACSF mapping included', 'Support plans auto-drafted', 'Audit-ready evidence trail'],
-    color: 'bg-emerald-100 text-emerald-600',
-    border: 'border-emerald-200',
+    icon: Smartphone,
+    title: 'Learners complete the assessments',
+    body: 'Learners use a phone, tablet or computer. Their progress is saved, so they can stop and continue later.',
+    points: [
+      'LLN: adaptive sections for reading, writing, numeracy, oral communication and learning',
+      'Each LLN section usually finishes within eight questions',
+      'Digital: a short, fixed set of practical questions',
+      'Learners see each assessment as not started, in progress or completed',
+    ],
+  },
+  {
+    icon: ClipboardCheck,
+    title: 'Review results',
+    body: 'Staff see an estimated ACSF level for each LLN area, the Digital result, and whether the learner meets the course requirements.',
+    points: ['Result outcome recorded for each learner', 'Compliance report you can print or save as a PDF', 'Audit trail export as a CSV file'],
+  },
+  {
+    icon: LifeBuoy,
+    title: 'Support learners who need it',
+    body: 'Learners whose results are below the course requirement are added to the Candidate Support queue. Your team reviews them and decides the next step.',
+    points: ['Draft a support plan from the results', 'Edit and approve the plan', 'Enrolment decisions always stay with your staff'],
   },
 ];
 
 export function HowItWorksPage({ currentHash }: { currentHash: string }) {
   return (
-    <div className="min-h-screen bg-white">
-      <TopNav currentHash={currentHash} />
-
-      {/* Hero */}
-      <section className="bg-gradient-to-b from-primary-50 to-white pt-28 pb-16 px-4 text-center">
-        <div className="max-w-3xl mx-auto">
-          <p className="text-sm font-bold text-primary-600 uppercase tracking-widest mb-4">How It Works</p>
-          <h1 className="text-5xl font-extrabold text-slate-900 mb-4 leading-tight">From sign up to first report in under an hour</h1>
-          <p className="text-lg text-slate-500 max-w-xl mx-auto">No implementation project. No IT involvement. No training required. Just a simple, self-service platform designed for busy RTOs.</p>
+    <MarketingShell currentHash={currentHash}>
+      <section className="bg-gradient-to-b from-primary-50/70 to-white px-4 sm:px-6 py-14 sm:py-20">
+        <div className="max-w-3xl mx-auto text-center">
+          <p className="text-sm font-semibold text-primary-700 mb-3">How it works</p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">How LLND Assess works</h1>
+          <p className="text-lg text-slate-600 leading-relaxed">
+            From creating your account to supporting learners who need extra help, in six steps.
+          </p>
         </div>
       </section>
 
-      {/* Steps */}
-      <section className="py-20 px-4 max-w-5xl mx-auto">
-        <div className="space-y-16">
-          {STEPS.map((step, i) => {
-            const Icon = step.icon;
-            const isRight = i % 2 !== 0;
-            return (
-              <div key={step.n} className={`grid grid-cols-1 md:grid-cols-2 gap-10 items-center ${isRight ? 'md:flex-row-reverse' : ''}`}>
-                <div className={isRight ? 'md:order-2' : ''}>
-                  <div className={`inline-flex items-center gap-2 border-2 ${step.border} rounded-full px-4 py-1.5 text-xs font-bold mb-5`}>
-                    <span className={`w-5 h-5 rounded-full ${step.color} flex items-center justify-center text-xs font-extrabold`}>{step.n}</span>
-                    Step {step.n}
-                  </div>
-                  <h2 className="text-3xl font-extrabold text-slate-900 mb-3">{step.title}</h2>
-                  <p className="text-slate-500 leading-relaxed mb-6">{step.desc}</p>
-                  <ul className="space-y-2">
-                    {step.detail.map((d) => (
-                      <li key={d} className="flex items-center gap-2.5 text-sm text-slate-700 font-medium">
-                        <div className={`w-5 h-5 rounded-full ${step.color} flex items-center justify-center flex-shrink-0`}>
-                          <span className="text-[10px] font-extrabold">✓</span>
-                        </div>
-                        {d}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className={`${isRight ? 'md:order-1' : ''}`}>
-                  <div className={`bg-gradient-to-br ${
-                    i === 0 ? 'from-primary-50 to-primary-100' :
-                    i === 1 ? 'from-teal-50 to-teal-100' :
-                    i === 2 ? 'from-amber-50 to-amber-100' :
-                    'from-emerald-50 to-emerald-100'
-                  } rounded-3xl p-12 flex items-center justify-center aspect-square max-w-sm mx-auto`}>
-                    <div className={`w-24 h-24 rounded-3xl ${step.color} flex items-center justify-center shadow-lg`}>
-                      <Icon className="w-12 h-12" />
-                    </div>
-                  </div>
-                </div>
+      <section className="px-4 sm:px-6 pb-16 sm:pb-20" aria-label="Steps">
+        <ol className="max-w-4xl mx-auto space-y-6">
+          {STEPS.map(({ icon: Icon, title, body, points }, i) => (
+            <li key={title} className="rounded-2xl border border-slate-200 p-6 sm:p-8 flex flex-col sm:flex-row gap-6">
+              <div className="flex sm:flex-col items-center gap-3 sm:w-24 flex-shrink-0">
+                <span className="w-12 h-12 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center">
+                  <Icon className="w-6 h-6" aria-hidden="true" />
+                </span>
+                <span className="text-sm font-semibold text-slate-500">Step {i + 1}</span>
               </div>
-            );
-          })}
-        </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 mb-2">{title}</h2>
+                <p className="text-slate-600 leading-relaxed mb-4">{body}</p>
+                <ul className="list-disc pl-5 space-y-1.5 text-sm text-slate-700">
+                  {points.map((p) => <li key={p}>{p}</li>)}
+                </ul>
+              </div>
+            </li>
+          ))}
+        </ol>
       </section>
 
-      {/* CTA */}
-      <section className="py-20 bg-gradient-to-br from-primary-700 to-primary-900 text-white text-center px-4">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-4xl font-extrabold mb-4">Start in minutes, not months</h2>
-          <p className="text-primary-200 mb-8">14-day free trial. No credit card. No contract.</p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <button onClick={() => nav('#/signup')} className="px-8 py-4 bg-white text-primary-700 font-extrabold rounded-xl hover:bg-primary-50 transition-all shadow-lg inline-flex items-center gap-2">
-              Start Free Trial <ArrowRight className="w-5 h-5" />
-            </button>
-            <button onClick={() => nav('#/contact')} className="px-8 py-4 border-2 border-white/30 text-white font-bold rounded-xl hover:bg-white/10 inline-flex items-center gap-2">
-              <Calendar className="w-5 h-5" /> Book a Demo
-            </button>
-          </div>
-        </div>
+      <section className="bg-slate-50 px-4 sm:px-6 py-14 text-center">
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-3">Ready to try it?</h2>
+        <p className="text-slate-600 mb-6">{PRIMARY_OFFER}</p>
+        <a href={SIGNUP_HASH} className="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-primary-600 text-white font-bold hover:bg-primary-700 transition-colors">
+          {PRIMARY_CTA} <ArrowRight className="w-5 h-5" aria-hidden="true" />
+        </a>
       </section>
-
-      <Footer />
-    </div>
+    </MarketingShell>
   );
 }

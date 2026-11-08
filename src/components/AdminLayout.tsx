@@ -84,7 +84,7 @@ export function AdminLayout({ currentPage, onPageChange, children }: AdminLayout
               <GraduationCap className="w-5 h-5 text-white" />
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-900">LLND Automate</div>
+              <div className="text-sm font-bold text-slate-900">LLND Assess</div>
               <div className="text-xs text-slate-400">Candidate Assessment</div>
             </div>
           </div>

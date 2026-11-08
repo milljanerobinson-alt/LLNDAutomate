@@ -211,7 +211,7 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
             <div className="w-11 h-11 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center border border-white/20">
               {isEios ? <ShieldCheck className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
             </div>
-            <span className="text-xl font-semibold">{isEios ? 'EIOS' : 'LLND Automate'}</span>
+            <span className="text-xl font-semibold">{isEios ? 'EIOS' : 'LLND Assess'}</span>
           </button>
         </div>
         <div className="relative z-10 max-w-md">
@@ -220,14 +220,14 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
               ? 'Engineering Intelligence & Oversight System'
               : isEios
                 ? 'Engineering Intelligence Operating System'
-                : 'Language, Literacy, Numeracy & Digital Assessment Platform'}
+                : 'Adaptive LLN & Digital Assessments for Australian RTOs'}
           </h1>
           <p className={`text-lg leading-relaxed ${isEios ? 'text-eios-100' : 'text-primary-100'}`}>
             {isEiosOAuth
               ? 'Continue to authorise ChatGPT to access EIOS. Your engineering records, audit trails, and governed inspections remain protected.'
               : isEios
                 ? 'Governed engineering intelligence, ATD, and secure platform integrations for the Engineering Intelligence Operating System.'
-                : 'Comprehensive LLND Automate assessment, ACSF mapping, course recommendations, ASQA compliance reporting, and aXcelerate integration for RTOs.'}
+                : 'Assess learner readiness, identify support needs and track progress with LLND Assess.'}
           </p>
         </div>
         {isEios ? (
@@ -273,7 +273,7 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
                 ? 'Continue to authorise ChatGPT to access EIOS.'
                 : isEios
                   ? 'Access the Engineering Intelligence Operating System.'
-                  : 'Access the LLND Automate dashboard'}
+                  : 'Access the LLND Assess dashboard'}
           </p>
 
           {error && (

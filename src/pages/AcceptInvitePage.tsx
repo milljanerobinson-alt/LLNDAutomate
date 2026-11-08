@@ -15,7 +15,7 @@ function invalidInvitation() {
       <p className="mt-3 text-slate-600">
         For your security, invitation links can only be used while they are valid. Contact your RTO administrator and ask them to send you a new invitation.
       </p>
-      <a href="/" className="mt-7 inline-flex text-primary-700 font-semibold hover:text-primary-800">Return to LLND Automate</a>
+      <a href="/" className="mt-7 inline-flex text-primary-700 font-semibold hover:text-primary-800">Return to LLND Assess</a>
     </InviteShell>
   );
 }
@@ -85,12 +85,12 @@ export function AcceptInvitePage() {
       {complete ? (
         <>
           <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-5" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-slate-900">Your LLND Automate account is ready</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Your LLND Assess account is ready</h1>
           <p className="mt-3 text-slate-600">Opening your authorised workspace…</p>
         </>
       ) : (
         <>
-          <h1 className="text-2xl font-bold text-slate-900">Set up your LLND Automate account</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Set up your LLND Assess account</h1>
           <p className="mt-3 text-slate-600">Choose a secure password to finish accepting your RTO staff invitation.</p>
           <form className="mt-7 space-y-5" onSubmit={handleSubmit}>
             <label className="block">
@@ -138,7 +138,7 @@ function InviteShell({ children }: { children: ReactNode }) {
       <section className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-lg border border-slate-200">
         <div className="mb-8 flex items-center gap-3 text-primary-700">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50"><GraduationCap className="h-6 w-6" /></span>
-          <span className="text-xl font-bold">LLND Automate</span>
+          <span className="text-xl font-bold">LLND Assess</span>
         </div>
         {children}
       </section>

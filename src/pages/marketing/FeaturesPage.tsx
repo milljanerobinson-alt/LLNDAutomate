@@ -1,124 +1,71 @@
-import {
-  Brain, Target, Monitor, Package, Clock, AlertTriangle,
-  ClipboardList, ShieldCheck, Zap, DollarSign, Users, Building2,
-  ArrowRight, Calendar, Check,
-} from 'lucide-react';
-import { TopNav } from '../../components/marketing/TopNav';
-import { Footer } from '../../components/marketing/Footer';
+import { ArrowRight, BookOpen, ClipboardCheck, FileText, LifeBuoy, Lock, Mail, Monitor, RotateCcw, Smartphone, Target, Users } from 'lucide-react';
+import { MarketingShell } from '../../components/marketing/MarketingShell';
+import { PRIMARY_CTA, SIGNUP_HASH } from '../../lib/brand';
 
-function nav(hash: string) { window.location.href = hash; }
-
-const SECTIONS = [
+const GROUPS = [
   {
-    tag: 'Assessment',
-    heading: 'LLN & Digital Capability in one platform',
+    heading: 'Assessments',
     items: [
-      { icon: Brain, color: 'bg-violet-100 text-violet-600', title: 'AI-Generated Reports', desc: 'Every learner gets an automated, ACSF-mapped report drafted by AI and reviewed by your trainers. No manual report writing.' },
-      { icon: Target, color: 'bg-blue-100 text-blue-600', title: 'ACSF Mapped Assessments', desc: 'Every question is precisely mapped to an ACSF skill and performance level. Compliance evidence is generated automatically.' },
-      { icon: Monitor, color: 'bg-teal-100 text-teal-600', title: 'Digital Capability Assessments', desc: 'Assess the digital skills of your learners alongside LLN. Everything in one platform, one invoice, one dashboard.' },
-      { icon: Package, color: 'bg-emerald-100 text-emerald-600', title: 'Combined LLN + Digital', desc: 'Run both assessment types together. On our LLN + Digital plan, the same learner counts once — never billed twice.' },
+      { icon: BookOpen, title: 'Adaptive LLN assessment', body: 'Reading, writing, numeracy, oral communication and learning. Each section adjusts to the learner and usually finishes within eight questions.' },
+      { icon: Monitor, title: 'Digital assessment', body: 'A short, fixed set of practical questions about everyday digital skills.' },
+      { icon: Target, title: 'ACSF levels', body: 'LLN results give an estimated ACSF level from 1 to 5 for each area.' },
     ],
   },
   {
-    tag: 'Learner Experience',
-    heading: 'Assessments learners actually complete',
+    heading: 'For learners',
     items: [
-      { icon: Clock, color: 'bg-amber-100 text-amber-600', title: 'Fast 20-Minute Assessments', desc: 'Modern, engaging assessments designed to take under 20 minutes. Completion rates of 95%+ compared to 40% for traditional platforms.' },
-      { icon: Users, color: 'bg-indigo-100 text-indigo-600', title: 'Any Device, Any Time', desc: 'Fully mobile-optimised. Learners can complete assessments on their phone, tablet, or desktop without any app download.' },
+      { icon: Mail, title: 'Personal assessment link', body: 'Learners open their assessments from an emailed link. No account or password needed.' },
+      { icon: Smartphone, title: 'Works on any device', body: 'Phone, tablet or computer.' },
+      { icon: RotateCcw, title: 'Save and continue', body: 'Progress is saved, so learners can stop and come back later.' },
     ],
   },
   {
-    tag: 'Trainer Workflow',
-    heading: 'Powerful tools for your training team',
+    heading: 'For your team',
     items: [
-      { icon: AlertTriangle, color: 'bg-rose-100 text-rose-600', title: 'Intervention Workflows', desc: 'At-risk learners are automatically flagged. Trainers have a structured workflow to manage, document, and close interventions.' },
-      { icon: ClipboardList, color: 'bg-sky-100 text-sky-600', title: 'AI Support Plans', desc: 'Support plans are AI-drafted with personalised recommendations for each learner. Trainers review, edit, and approve before sending.' },
-      { icon: Users, color: 'bg-blue-100 text-blue-600', title: 'Unlimited Trainers', desc: 'Add as many trainers as you need. There are no per-seat charges — every member of your training team can have full access.' },
-      { icon: Building2, color: 'bg-orange-100 text-orange-600', title: 'Unlimited Campuses', desc: 'Manage multiple campuses, delivery modes, and teams from one central admin dashboard with full visibility.' },
-    ],
-  },
-  {
-    tag: 'Compliance & Reporting',
-    heading: 'Built for ASQA audits',
-    items: [
-      { icon: ShieldCheck, color: 'bg-green-100 text-green-600', title: 'Audit-Ready Evidence', desc: 'Every assessment generates a complete, ASQA-compliant evidence trail. Assessment responses, dates, scores, and trainer decisions are all captured.' },
-      { icon: Zap, color: 'bg-yellow-100 text-yellow-600', title: 'Instant Compliance Reports', desc: 'Download LLN compliance reports for any candidate, cohort, or qualification in seconds. No spreadsheets required.' },
-    ],
-  },
-  {
-    tag: 'Billing',
-    heading: 'Pricing that scales with your RTO',
-    items: [
-      { icon: DollarSign, color: 'bg-lime-100 text-lime-600', title: 'Usage-Based Pricing', desc: 'You only pay for learners who complete assessments. Invitations, incomplete responses, and admin users are free.' },
-      { icon: Zap, color: 'bg-primary-100 text-primary-600', title: 'No Contract Required', desc: 'Start a free trial with no credit card. Cancel or change plans anytime from your billing dashboard.' },
+      { icon: ClipboardCheck, title: 'Course requirements', body: 'Approve the LLND requirements for each qualification. Results are compared against the approved requirements.' },
+      { icon: LifeBuoy, title: 'Candidate Support queue', body: 'Learners below a course requirement are queued for your team to review, with draft support plans you can edit and approve.' },
+      { icon: FileText, title: 'Reports and evidence', body: 'Compliance report for each completed learner that you can print or save as a PDF, plus an audit trail export as a CSV file.' },
+      { icon: Users, title: 'Staff workspaces', body: 'Administration, Candidate Support and Technical workspaces. Invite staff by email and give each person the access they need.' },
+      { icon: Lock, title: 'Your RTO’s data stays separate', body: 'Each RTO can only see its own learners, results and settings.' },
     ],
   },
 ];
 
 export function FeaturesPage({ currentHash }: { currentHash: string }) {
   return (
-    <div className="min-h-screen bg-white">
-      <TopNav currentHash={currentHash} />
-
-      {/* Hero */}
-      <section className="bg-gradient-to-b from-primary-50 to-white pt-28 pb-20 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-sm font-bold text-primary-600 uppercase tracking-widest mb-4">Platform Features</p>
-          <h1 className="text-5xl font-extrabold text-slate-900 leading-tight mb-5">
-            Everything your RTO needs.<br />Nothing it doesn't.
-          </h1>
-          <p className="text-lg text-slate-500 max-w-2xl mx-auto mb-8">
-            LLND Automate is purpose-built for Australian RTOs — every feature has a reason, and nothing is bloatware.
-          </p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <button onClick={() => nav('#/signup')} className="inline-flex items-center gap-2 px-7 py-3.5 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 transition-all shadow-md">
-              Start Free Trial <ArrowRight className="w-5 h-5" />
-            </button>
-            <button onClick={() => nav('#/contact')} className="inline-flex items-center gap-2 px-7 py-3.5 border-2 border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all">
-              <Calendar className="w-5 h-5" /> Book a Demo
-            </button>
-          </div>
+    <MarketingShell currentHash={currentHash}>
+      <section className="bg-gradient-to-b from-primary-50/70 to-white px-4 sm:px-6 py-14 sm:py-20">
+        <div className="max-w-3xl mx-auto text-center">
+          <p className="text-sm font-semibold text-primary-700 mb-3">Features</p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">What’s included in LLND Assess</h1>
+          <p className="text-lg text-slate-600 leading-relaxed">Everything listed here is available on the Free plan.</p>
         </div>
       </section>
-
-      {/* Feature sections */}
-      {SECTIONS.map((section, si) => (
-        <section key={si} className={`py-20 px-4 ${si % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+      {GROUPS.map((g) => (
+        <section key={g.heading} className="px-4 sm:px-6 pb-14" aria-labelledby={`grp-${g.heading}`}>
           <div className="max-w-6xl mx-auto">
-            <p className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-2">{section.tag}</p>
-            <h2 className="text-3xl font-extrabold text-slate-900 mb-10">{section.heading}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {section.items.map(({ icon: Icon, color, title, desc }) => (
-                <div key={title} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${color} mb-4`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
+            <h2 id={`grp-${g.heading}`} className="text-2xl font-extrabold text-slate-900 mb-6">{g.heading}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {g.items.map(({ icon: Icon, title, body }) => (
+                <div key={title} className="rounded-2xl border border-slate-200 p-6">
+                  <Icon className="w-6 h-6 text-primary-600 mb-3" aria-hidden="true" />
                   <h3 className="font-bold text-slate-900 mb-2">{title}</h3>
-                  <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+                  <p className="text-sm text-slate-600 leading-relaxed">{body}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
       ))}
-
-      {/* CTA */}
-      <section className="py-20 bg-gradient-to-br from-primary-700 to-primary-900 text-white text-center px-4">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-4xl font-extrabold mb-4">Ready to see it in action?</h2>
-          <p className="text-primary-200 mb-8">Start your 14-day free trial or book a demo with our team.</p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <button onClick={() => nav('#/signup')} className="px-8 py-4 bg-white text-primary-700 font-extrabold rounded-xl hover:bg-primary-50 transition-all shadow-lg inline-flex items-center gap-2">
-              Start Free Trial <ArrowRight className="w-5 h-5" />
-            </button>
-            <button onClick={() => nav('#/contact')} className="px-8 py-4 border-2 border-white/30 text-white font-bold rounded-xl hover:bg-white/10 inline-flex items-center gap-2">
-              <Calendar className="w-5 h-5" /> Book a Demo
-            </button>
-          </div>
+      <section className="bg-slate-50 px-4 sm:px-6 py-14">
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-2xl font-extrabold text-slate-900 mb-3">Coming with paid plans</h2>
+          <p className="text-slate-600 mb-6">Premium integration automation is planned for the Automate plan. It is not available yet.</p>
+          <a href={SIGNUP_HASH} className="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-primary-600 text-white font-bold hover:bg-primary-700 transition-colors">
+            {PRIMARY_CTA} <ArrowRight className="w-5 h-5" aria-hidden="true" />
+          </a>
         </div>
       </section>
-
-      <Footer />
-    </div>
+    </MarketingShell>
   );
 }

@@ -307,7 +307,7 @@ export function SupportPlansPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Support Plans</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Review, edit and approve learner support plans generated from LLND Automate assessment outcomes.
+            Review, edit and approve learner support plans generated from LLND Assess assessment outcomes.
           </p>
         </div>
         {eligibleInvitations.length > 0 && (

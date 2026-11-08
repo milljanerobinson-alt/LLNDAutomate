@@ -91,7 +91,7 @@ Deno.serve(async (req: Request) => {
     const settings: Record<string, any> = {};
     settingsData?.forEach((s: any) => { settings[s.key] = s.value; });
 
-    const orgName: string = organisationProfile.branding.name || "LLND Automate";
+    const orgName: string = organisationProfile.branding.name || "LLND Assess";
     const RESEND_API_KEY: string | undefined =
       Deno.env.get("RESEND_API_KEY") ||
       (typeof settings["RESEND_API_KEY"] === "string" ? settings["RESEND_API_KEY"] : undefined);

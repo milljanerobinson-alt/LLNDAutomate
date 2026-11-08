@@ -613,7 +613,7 @@ Deno.serve(async (req: Request) => {
     // Load org settings
     const { data: brandRow } = await supabase
       .from("settings").select("value").eq("key", "org_branding").maybeSingle();
-    const orgName: string = brandRow?.value?.name || "LLND Automate";
+    const orgName: string = brandRow?.value?.name || "LLND Assess";
     const portalBase: string =
       Deno.env.get("SITE_URL") ||
       brandRow?.value?.app_url ||

@@ -52,13 +52,13 @@ function buildNote(
     case "invitation_sent":
     case "quiz_sent":
       return [
-        "▶ LLND Automate ASSESSMENT INVITATION SENT", D,
+        "▶ LLND Assess ASSESSMENT INVITATION SENT", D,
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Invited:       ${fmt(invitation.sent_at)}`,
         `Due:           ${invitation.due_date ? fmt(invitation.due_date) : "Not set"}`,
-        "", "The candidate has been invited to complete their LLND Automate assessment.",
-        `Portal: ${portalUrl}`, D, "Source: LLND Automate",
+        "", "The candidate has been invited to complete their LLND Assess assessment.",
+        `Portal: ${portalUrl}`, D, "Source: LLND Assess",
       ].join("\n");
 
     case "assessment_completed": {
@@ -70,7 +70,7 @@ function buildNote(
       };
       const rec = invitation.course_recommendation || "unknown";
       const lines = [
-        "✅ LLND Automate ASSESSMENT COMPLETED", D,
+        "✅ LLND Assess ASSESSMENT COMPLETED", D,
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Completed:     ${fmt(invitation.completed_at)}`,
@@ -95,7 +95,7 @@ function buildNote(
           }
         }
       }
-      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Automate");
+      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Assess");
       return lines.join("\n");
     }
 
@@ -104,7 +104,7 @@ function buildNote(
       const strategies: string[] = content?.strategies || content?.support_strategies || [];
       const summary: string = content?.summary || content?.overview || "";
       const lines = [
-        "📋 LLND Automate SUPPORT PLAN GENERATED", D,
+        "📋 LLND Assess SUPPORT PLAN GENERATED", D,
         `Candidate:    ${name} <${email}>`,
         `Qualification:${qualName}`,
         `Status:       ${supportPlan?.status === "approved" ? "APPROVED" : "Draft"}`,
@@ -116,19 +116,19 @@ function buildNote(
         strategies.slice(0, 5).forEach((s: string, i: number) => lines.push(`${i + 1}. ${typeof s === "string" ? s : JSON.stringify(s)}`));
         if (strategies.length > 5) lines.push(`  ... and ${strategies.length - 5} more`);
       }
-      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Automate");
+      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Assess");
       return lines.join("\n");
     }
 
     case "intervention_required":
       return [
-        "🚨 LLND Automate INTERVENTION FLAGGED", D,
+        "🚨 LLND Assess INTERVENTION FLAGGED", D,
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Flagged:       ${fmt(new Date().toISOString())}`,
         "", "REASON", (extraData.trigger_reason as string) || "Not specified",
         "", "Please review and arrange appropriate support.",
-        `Portal: ${portalUrl}`, D, "Source: LLND Automate",
+        `Portal: ${portalUrl}`, D, "Source: LLND Assess",
       ].join("\n");
 
     case "lln_assessment_opened":
@@ -137,8 +137,8 @@ function buildNote(
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Opened:        ${fmt((extraData.opened_at as string) || new Date().toISOString())}`,
-        "", "The candidate has opened and started their LLN assessment in the LLND Automate Portal.",
-        `Portal: ${portalUrl}`, D, "Source: LLND Automate",
+        "", "The candidate has opened and started their LLN assessment in LLND Assess.",
+        `Portal: ${portalUrl}`, D, "Source: LLND Assess",
       ].join("\n");
 
     case "digital_assessment_opened":
@@ -147,8 +147,8 @@ function buildNote(
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Opened:        ${fmt((extraData.opened_at as string) || new Date().toISOString())}`,
-        "", "The candidate has opened and started their Digital Skills assessment in the LLND Automate Portal.",
-        `Portal: ${portalUrl}`, D, "Source: LLND Automate",
+        "", "The candidate has opened and started their Digital Skills assessment in LLND Assess.",
+        `Portal: ${portalUrl}`, D, "Source: LLND Assess",
       ].join("\n");
 
     case "lln_assessment_completed": {
@@ -168,7 +168,7 @@ function buildNote(
           lines.push(`  ${domain.replace(/_/g, " ")}: Level ${level}`);
         }
       }
-      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Automate");
+      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Assess");
       return lines.join("\n");
     }
 
@@ -189,7 +189,7 @@ function buildNote(
           lines.push(`  ${domain.replace(/_/g, " ")}: Level ${level}`);
         }
       }
-      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Automate");
+      lines.push("", `Portal: ${portalUrl}`, D, "Source: LLND Assess");
       return lines.join("\n");
     }
 
@@ -199,24 +199,24 @@ function buildNote(
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Recorded:      ${fmt(new Date().toISOString())}`,
-        "", "An existing completed LLND Automate assessment report was found for this candidate.",
+        "", "An existing completed LLND Assess assessment report was found for this candidate.",
         "No new assessment was required. The existing report remains valid.",
-        `Portal: ${portalUrl}`, D, "Source: LLND Automate",
+        `Portal: ${portalUrl}`, D, "Source: LLND Assess",
       ].join("\n");
 
     case "no_lln_required":
       return [
-        "ℹ️ LLND Automate ASSESSMENT NOT REQUIRED", D,
+        "ℹ️ LLND Assess ASSESSMENT NOT REQUIRED", D,
         `Candidate:     ${name} <${email}>`,
         `Qualification: ${qualName}`,
         `Recorded:      ${fmt(new Date().toISOString())}`,
-        "", "This candidate does not require an LLND Automate assessment.",
+        "", "This candidate does not require an LLND Assess assessment.",
         "Reason: existing valid result or qualification exemption applies.",
-        `Portal: ${portalUrl}`, D, "Source: LLND Automate",
+        `Portal: ${portalUrl}`, D, "Source: LLND Assess",
       ].join("\n");
 
     default:
-      return `LLND Automate Event: ${eventType}\nCandidate: ${name}\n${fmt(new Date().toISOString())}`;
+      return `LLND Assess Event: ${eventType}\nCandidate: ${name}\n${fmt(new Date().toISOString())}`;
   }
 }
 

@@ -6,6 +6,7 @@ import {
   type AnyWorkspace, type CustomerWorkspace,
 } from './lib/workspaceAccess';
 import { parseEngineeringRoute } from './lib/engineeringNavigationService';
+import { llndDocumentTitle } from './lib/brand';
 import { ErrorBoundary, FeatureErrorBoundary } from './components/ErrorBoundary';
 import { RouteLoadingState } from './components/RouteRecoveryStates';
 import {
@@ -88,10 +89,6 @@ function Router() {
   const product = resolveProduct();
   const isInviteAcceptancePath = window.location.pathname === '/accept-invite';
 
-  useEffect(() => {
-    document.title = product === 'llnd' ? 'LLND Automate' : 'EIOS';
-  }, [product]);
-
   // Migrate any persisted /lln values in storage (once)
   useEffect(() => { migrateLegacyLlnPaths(); }, []);
 
@@ -121,6 +118,11 @@ function Router() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+
+  // Browser tab title (LLND Assess website and product, or EIOS).
+  useEffect(() => {
+    document.title = product === 'llnd' ? llndDocumentTitle(parseHash(hash).kind) : 'EIOS';
+  }, [product, hash]);
 
   // While auth or workspace access is loading, show loader — do not redirect.
   if (loading || (user && wsLoading)) return <FullScreenLoader />;
@@ -172,12 +174,12 @@ function Router() {
   }
 
   // ─── LLND root route ─────────────────────────────────────────────────────────
-  // The domain root is the public LLND Automate website.
+  // The domain root is the public LLND Assess website.
   if (route.kind === 'root' && product === 'llnd') {
     return <HomePage currentHash={hash} />;
   }
 
-  // ─── LLND Automate public website ───────────────────────────────────────────
+  // ─── LLND Assess public website (formerly LLND Automate) ────────────────────
   if (product === 'llnd' && (route.kind === 'home' || route.kind === 'about' || route.kind === 'features' ||
       route.kind === 'how-it-works' || route.kind === 'resources' || route.kind === 'contact' ||
       route.kind === 'pricing' || route.kind === 'signup')) {

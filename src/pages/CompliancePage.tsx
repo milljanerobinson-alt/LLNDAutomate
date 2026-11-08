@@ -328,7 +328,7 @@ export function CompliancePage() {
       <div className="no-print">
         <h1 className="text-2xl font-bold text-slate-900">Compliance</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Generate ASQA audit-ready reports from completed LLND Automate assessments.
+          Generate compliance reports from completed LLND Assess assessments.
         </p>
       </div>
 
@@ -905,7 +905,7 @@ function ReportHeader({
               </p>
             )}
             <p className="text-xs text-slate-500 mt-1">
-              LLND Automate Assessment Compliance Report
+              LLND Assess Assessment Compliance Report
             </p>
           </div>
         </div>
