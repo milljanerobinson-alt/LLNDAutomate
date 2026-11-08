@@ -187,7 +187,7 @@ describe('Issue #40 Administration controls', () => {
     expect(supabaseClient).toContain("type: params.get('type')");
     expect(supabaseClient).toContain("errorCode: params.get('error_code')");
     expect(supabaseClient).not.toContain("params.get('access_token')");
-    expect(acceptInvite).toContain('Set up your LLND Automate account');
+    expect(acceptInvite).toContain('Set up your LLND Assess account');
     expect(acceptInvite).toContain('supabase.auth.updateUser({ password })');
     expect(acceptInvite).toContain('This invitation link is invalid or has expired');
     expect(acceptInvite).not.toContain('error_description');
