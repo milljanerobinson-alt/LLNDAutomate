@@ -64,12 +64,12 @@ jobs:
       - name: Local Supabase stack + clean-install bootstrap (all migrations, one transaction)
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           mkdir -p /tmp/sb && cd /tmp/sb && supabase init --force > /dev/null
           supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,postgres-meta,realtime > /tmp/sb-start.log 2>&1 || (tail -40 /tmp/sb-start.log; exit 1)
           cd "$GITHUB_WORKSPACE"
           scripts/clean-install/bootstrap-database.sh --db-url "$LOCAL_DB_URL" --source-commit "$(git rev-parse HEAD)" --execute > /tmp/bootstrap.log 2>&1; rc=$?
-          echo "::notice title=BOOTSTRAP::rc=$rc%0A$(grep -E 'PASS|FAIL|migrations=|ERROR' /tmp/bootstrap.log | tail -25 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3500)"
+          echo "::notice title=BOOTSTRAP::rc=$rc%0A$(grep -E 'PASS|FAIL|migrations=|ERROR|LINE|refused|psql:' /tmp/bootstrap.log | tail -25 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3500)%0ATAIL:%0A$(tail -8 /tmp/bootstrap.log | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-1500)"
           exit $rc
       - name: DB integration tests (metering)
         shell: bash
