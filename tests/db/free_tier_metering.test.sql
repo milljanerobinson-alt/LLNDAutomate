@@ -10,6 +10,11 @@
 
 \set ON_ERROR_STOP on
 SET client_min_messages = notice;
+-- Valid empty request context for the whole session. Transaction-local overrides
+-- below revert to these values (an unset custom setting would revert to '', which
+-- some existing functions cannot parse as JSON).
+SET request.jwt.claims = '{}';
+SET request.headers = '{}';
 
 CREATE SCHEMA IF NOT EXISTS metering_test;
 
