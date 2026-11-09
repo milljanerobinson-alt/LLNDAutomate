@@ -41,10 +41,21 @@ describe('clean-install: ordering of the safety migrations', () => {
     expect(files.indexOf(GUARD)).toBe(files.indexOf(risky[0]) - 1);
   });
 
-  it('the integration-defaults migration is the latest migration and runs after #45, validity and P1', () => {
-    expect(files[files.length - 1]).toBe(DEFAULTS);
+  it('the integration-defaults migration runs after #45, validity and P1, and nothing after it schedules jobs, sends requests or names a project', () => {
     expect(version(DEFAULTS) > ISSUE45_VERSION).toBe(true);
     expect(version(DEFAULTS) > '20261029100000').toBe(true);
+    // Later migrations are allowed only if they cannot undo what the defaults
+    // migration guarantees: no cron jobs, no outbound requests, no hard-coded
+    // Supabase project address and no change to the invokers it replaced.
+    const later = files.slice(files.indexOf(DEFAULTS) + 1);
+    for (const f of later) {
+      const sql = withoutComments(read(path.join(MIGRATIONS, f)));
+      expect(sql, f).not.toMatch(/cron\.|net\.http_|extensions\.http|pg_net|pg_cron|create extension/i);
+      expect(sql, f).not.toMatch(/\.supabase\.co|functions\/v1/i);
+      expect(sql, f).not.toMatch(/platform_ops\.(outbound_request_allowlist|runtime_config)/i);
+      expect(sql, f).not.toContain(DENIED);
+      expect(sql, f).not.toMatch(/invoke_queue_processor|invoke_scheduled_briefings/);
+    }
   });
 
   it('the guard blocks every pg_net request that is not on an explicit allowlist', () => {
