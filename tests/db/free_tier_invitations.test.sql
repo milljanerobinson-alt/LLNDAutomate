@@ -101,7 +101,7 @@ INSERT INTO mt.ids VALUES ('operator', mt.admin(mt.org('op')));
 
 -- ── Reserved test identity ───────────────────────────────────────────────
 SELECT mt.ok(public.llnd_is_reserved_test_name(n), 'is a test name: ' || quote_literal(n))
-FROM unnest(ARRAY['Test Test', 'test test', 'TEST TEST', '  Test   Test  ', E'Test\tTest', E'Test Test', E'Test​ Test', E'Ｔest Ｔest']) AS n;
+FROM unnest(ARRAY['Test Test', 'test test', 'TEST TEST', '  Test   Test  ', E'Test\tTest', E'Test\u00a0Test', E'Test\u200b Test', E'\uff34est \uff34est']) AS n;
 SELECT mt.ok(NOT public.llnd_is_reserved_test_name(n), 'is NOT a test name: ' || quote_literal(coalesce(n, 'NULL')))
 FROM unnest(ARRAY['Test Testerson', 'Testa Test', 'Test Test Smith', 'TestTest', 'Test-Test', 'Test', 'Tess Test', 'Testy McTest', '', NULL]) AS n;
 
