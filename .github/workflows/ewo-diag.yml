@@ -72,8 +72,8 @@ jobs:
           echo "::notice title=BOOTSTRAP::rc=$rc%0A$(grep -E 'PASS|FAIL|migrations=|ERROR|LINE|refused|psql:' /tmp/bootstrap.log | tail -25 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3500)%0ATAIL:%0A$(tail -8 /tmp/bootstrap.log | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-1500)"
           # Install succeeded if the single-transaction run was recorded. The only accepted
           # verification failures are the #45 platform-operator objects (#45 is not on this branch).
-          grep -q "PASS | provenance: one single-transaction install run recorded" /tmp/bootstrap.log || exit 1
-          other=$(grep "^FAIL" /tmp/bootstrap.log | grep -v -E "platform_operators MISSING|is_platform_operator MISSING" || true)
+          grep -q "provenance: one single-transaction install run recorded" /tmp/bootstrap.log || exit 1
+          other=$(grep -E "^\s*FAIL" /tmp/bootstrap.log | grep -v -E "platform_operators MISSING|is_platform_operator MISSING" || true)
           [ -z "$other" ] || { echo "$other"; exit 1; }
           exit 0
       - name: DB integration tests (metering)
