@@ -51,6 +51,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // LLND Mate: a deleted assignment gets no further processing. A Test Test
+    // assignment is recorded and can be reviewed, but triggers no student
+    // update, aXcelerate action or automatic support plan.
+    if (inv.deleted_at) {
+      return new Response(
+        JSON.stringify({ error: "Invitation not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const isTest = inv.is_test === true;
+
     if (inv.status !== "completed") {
       return new Response(
         JSON.stringify({ message: "Assessment not yet fully complete — no action taken" }),
@@ -138,7 +149,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Update student status
-    if (inv.student_id) {
+    if (inv.student_id && !isTest) {
       const studentStatus = recommendation === "suitable_with_support" ? "support_generated" : "digital_complete";
       await supabase.from("students")
         .update({ current_status: studentStatus })
@@ -285,6 +296,7 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
     const backgroundWork = (async () => {
+      if (isTest) return;
       // Dispatch aXcelerate write-back queue
       try {
         await fetch(`${supabaseUrl}/functions/v1/process-axcelerate-queue`, {

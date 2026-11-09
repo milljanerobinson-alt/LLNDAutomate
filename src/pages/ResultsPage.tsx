@@ -1,3 +1,4 @@
+import { TestBadge } from '../components/TestBadge';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Search, Filter, Loader2, X, ChevronRight, Mail, Calendar,
@@ -411,7 +412,7 @@ export function ResultsPage() {
                         className="hover:bg-slate-50 transition-colors cursor-pointer"
                       >
                         <td className="table-cell">
-                          <div className="font-medium text-slate-900">{inv.candidate_name}</div>
+                          <div className="font-medium text-slate-900">{inv.candidate_name}{inv.is_test && <TestBadge />}</div>
                           <div className="text-xs text-slate-500 flex items-center gap-1">
                             <Mail className="w-3 h-3" />
                             {inv.candidate_email}
@@ -499,7 +500,7 @@ export function ResultsPage() {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <div className="font-medium text-slate-900">{inv.candidate_name}</div>
+                      <div className="font-medium text-slate-900">{inv.candidate_name}{inv.is_test && <TestBadge />}</div>
                       <div className="text-xs text-slate-500">{inv.candidate_email}</div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
@@ -634,6 +635,7 @@ function DetailModal({
             <div className="min-w-0">
               <h2 className="text-lg font-bold text-slate-900 truncate">
                 {invitation.candidate_name}
+                {invitation.is_test && <TestBadge size="md" />}
               </h2>
               <p className="text-sm text-slate-500 truncate">{invitation.candidate_email}</p>
             </div>

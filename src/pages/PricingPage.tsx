@@ -20,7 +20,7 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
           <p className="text-sm font-semibold text-primary-700 mb-3">Pricing</p>
           <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">Start free. Pay only when you need more.</h1>
           <p className="text-lg text-slate-600 leading-relaxed">
-            {TIER_FREE} is free and includes 10 completed assessment assignments every month. {TIER_PLUS} and {TIER_AUTOMATE} are coming soon.
+            {TIER_FREE} is free and includes 10 assessment invitations every month. {TIER_PLUS} and {TIER_AUTOMATE} are coming soon.
           </p>
         </div>
       </section>
@@ -90,7 +90,7 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
 
       <section className="bg-slate-50 px-4 sm:px-6 py-14" aria-labelledby="rules-heading">
         <div className="max-w-3xl mx-auto">
-          <h2 id="rules-heading" className="text-2xl font-extrabold text-slate-900 mb-5">How completed assessments are counted</h2>
+          <h2 id="rules-heading" className="text-2xl font-extrabold text-slate-900 mb-5">How usage is counted</h2>
           <ul className="space-y-3">
             {BILLING_RULES.map((rule) => (
               <li key={rule} className="flex gap-3 text-slate-700 leading-relaxed">

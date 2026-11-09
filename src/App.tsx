@@ -17,6 +17,8 @@ import {
 // Layouts
 import { CustomerWorkspaceLayout } from './components/CustomerWorkspaceLayout';
 import { EngineeringLayout } from './components/EngineeringLayout';
+import { PlatformInvitationsUsagePage } from './pages/operator/PlatformInvitationsUsagePage';
+import { PlatformDeletedAssessmentsPage } from './pages/operator/PlatformDeletedAssessmentsPage';
 
 // Marketing
 import { HomePage } from './pages/marketing/HomePage';
@@ -267,6 +269,30 @@ function Router() {
     );
   }
 
+  // ─── LLND Mate platform reporting (EIOS product only) ──────────────────────
+  // Cross-RTO data is authorised on the server by the Issue #45 platform-operator
+  // grant + MFA session (llnd_is_platform_operator). This route gate only keeps
+  // the screens inside EIOS; when #45 is merged, wrap them in PlatformOperatorGate.
+  if (route.kind === 'platform-usage') {
+    if (product === 'llnd') {
+      navigateInProduct('eios', hash);
+      return <FullScreenLoader />;
+    }
+    if (profile?.role !== 'admin') {
+      navigateInProduct('eios', '#/login');
+      return <FullScreenLoader />;
+    }
+    return (
+      <EngineeringLayout>
+        <FeatureErrorBoundary featureName="Invitations & Usage" routeKey={`operator.${route.page}`}>
+          <div className="p-4 sm:p-6">
+            {route.page === 'deleted-assessments' ? <PlatformDeletedAssessmentsPage /> : <PlatformInvitationsUsagePage />}
+          </div>
+        </FeatureErrorBoundary>
+      </EngineeringLayout>
+    );
+  }
+
   // ─── Administration workspace (LLND product only) ──────────────────────────
   if (route.kind === 'administration') {
     if (product === 'eios') {
@@ -395,7 +421,8 @@ type Route =
   | { kind: 'candidate-support'; page: string }
   | { kind: 'technical'; page: string }
   | { kind: 'llnd-login' }
-  | { kind: 'oauth-consent' };
+  | { kind: 'oauth-consent' }
+  | { kind: 'platform-usage'; page: 'invitations-usage' | 'deleted-assessments' };
 
 function parseHash(hash: string): Route {
   const h = hash.replace(/^#\/?/, '').split('?')[0];
@@ -427,6 +454,7 @@ function parseHash(hash: string): Route {
   }
 
   if (parts[0] === 'oauth' && parts[1] === 'consent') return { kind: 'oauth-consent' };
+  if (parts[0] === 'operator' && (parts[1] === 'invitations-usage' || parts[1] === 'deleted-assessments')) return { kind: 'platform-usage', page: parts[1] };
 
   if ((parts[0] === 'rto-admin' || parts[0] === 'assessment') && parts[1]) return { kind: 'administration', page: parts[1] };
   if ((parts[0] === 'candidate-support' || parts[0] === 'trainer') && parts[1]) return { kind: 'candidate-support', page: parts[1] === 'students' ? 'candidates' : parts[1] };

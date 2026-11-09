@@ -28,7 +28,9 @@ export function DashboardPage() {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const loadStats = useCallback(async () => {
-    const { data: invitations } = await supabase.from('assessment_invitations').select('*');
+    const { data: allInvitations } = await supabase.from('assessment_invitations').select('*');
+    // Test Test assessments are excluded from learner reporting.
+    const invitations = (allInvitations ?? []).filter((i: any) => !i.is_test);
     const { data: plans } = await supabase.from('support_plans').select('*');
     const { data: interventions } = await supabase.from('intervention_cases').select('*');
 

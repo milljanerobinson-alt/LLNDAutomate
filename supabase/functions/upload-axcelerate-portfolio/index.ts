@@ -293,7 +293,8 @@ Deno.serve(async (req: Request) => {
       .eq("id", invitation_id)
       .maybeSingle();
 
-    if (!invitation) {
+    // LLND Mate: nothing is uploaded for deleted or Test Test assignments.
+    if (!invitation || invitation.deleted_at || invitation.is_test === true) {
       return new Response(JSON.stringify({ error: "Invitation not found" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

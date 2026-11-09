@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { MarketingShell, SectionIntro } from '../../components/marketing/MarketingShell';
 import {
-  BILLING_RULES, FREE_MONTHLY_COMPLETIONS, TIER_AUTOMATE, TIER_FREE, TIER_PLUS, HOME_DESCRIPTION, HOME_H1, HOW_IT_WORKS_HASH,
+  FREE_TIER_RULES, FREE_MONTHLY_INVITATIONS, TIER_AUTOMATE, TIER_FREE, TIER_PLUS, HOME_DESCRIPTION, HOME_H1, HOW_IT_WORKS_HASH,
   PRIMARY_CTA, PRIMARY_OFFER, PRIMARY_OFFER_SUPPORT, SECONDARY_CTA, SIGNUP_HASH,
 } from '../../lib/brand';
 import { FAQS } from '../../lib/marketingContent';
@@ -239,13 +239,13 @@ export function HomePage({ currentHash }: { currentHash: string }) {
       {/* Free allowance */}
       <section className="py-16 sm:py-20" aria-labelledby="free-heading">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
-          <SectionIntro id="free-heading" eyebrow="Pricing" title={`${FREE_MONTHLY_COMPLETIONS} free completed assessments every month`}>
+          <SectionIntro id="free-heading" eyebrow="Pricing" title={`${FREE_MONTHLY_INVITATIONS} free assessment invitations every month`}>
             <p>Start on {TIER_FREE} at no cost. {TIER_PLUS} and {TIER_AUTOMATE}, for more assessment volume and premium automation, are coming soon.</p>
           </SectionIntro>
           <div className="rounded-2xl border border-slate-200 p-6 lg:mt-9">
             <h3 className="font-bold text-slate-900 mb-4">How the allowance works</h3>
             <ul className="space-y-3">
-              {BILLING_RULES.slice(0, 4).map((rule) => (
+              {FREE_TIER_RULES.map((rule) => (
                 <li key={rule} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
                   <CheckCircle2 className="w-5 h-5 text-success-600 flex-shrink-0" aria-hidden="true" />
                   {rule}

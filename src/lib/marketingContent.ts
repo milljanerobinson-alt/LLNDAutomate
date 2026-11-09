@@ -17,7 +17,7 @@ export const FAQS: FaqItem[] = [
   },
   {
     q: 'What happens when we reach the LLND Mate free allowance?',
-    a: 'LLND Mate includes 10 completed assessment assignments each month. An LLN and a Digital assessment completed by the same learner under the same assignment count as one. Learners who have already started can still finish. New assessment starts are restricted until the next month. LLND Mate Plus and LLND Automate, with 20 included each month, are coming soon.',
+    a: 'LLND Mate includes 10 assessment invitations each month. An invitation counts when it is sent, and an LLN and a Digital assessment sent together count as one. When all 10 are used, new invitations can’t be sent until the next month, but learners already invited can still start and finish. Deleting an assessment sent this month returns its invitation. Invitations to “Test Test” never count. LLND Mate Plus and LLND Automate, with 20 completed assignments included each month, are coming soon.',
   },
   {
     q: 'Are the assessments adaptive?',

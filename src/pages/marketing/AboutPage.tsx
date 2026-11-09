@@ -6,7 +6,7 @@ const PRINCIPLES = [
   { title: 'Accurate results', body: 'Results are compared with the requirements your RTO approves. When a result cannot be confirmed, it is sent to your staff to review rather than accepted automatically.' },
   { title: 'Staff decide', body: 'LLND Mate reports results and highlights support needs. It never makes enrolment decisions for you.' },
   { title: 'Simple for learners', body: 'Short assessments from a personal link, on any device, with progress saved.' },
-  { title: 'Clear pricing', body: 'Start free on LLND Mate with 10 completed assessment assignments each month. LLND Mate Plus and LLND Automate will include 20 a month, with a set price for each additional completion.' },
+  { title: 'Clear pricing', body: 'Start free on LLND Mate with 10 assessment invitations each month. LLND Mate Plus and LLND Automate will include 20 a month, with a set price for each additional completion.' },
 ];
 
 export function AboutPage({ currentHash }: { currentHash: string }) {

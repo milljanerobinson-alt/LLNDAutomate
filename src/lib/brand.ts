@@ -36,7 +36,8 @@ export const SEO_TITLE = 'FREE LLN & Digital Assessments for RTOs | LLND Mate';
 export const SEO_DESCRIPTION =
   'Start free with 10 assessments every month. Adaptive LLN assessments, practical digital skills checks and clear learner support insights for Australian RTOs.';
 
-export const FREE_MONTHLY_COMPLETIONS = 10;
+/** LLND Mate monthly invitation allowance. */
+export const FREE_MONTHLY_INVITATIONS = 10;
 
 export type PlanAvailability = 'available' | 'coming_soon';
 
@@ -61,7 +62,7 @@ export interface PlanRow {
 export const PLANS: PlanRow[] = [
   {
     id: 'free', name: TIER_FREE, summary: 'Free for Australian RTOs', availability: 'available',
-    monthlyFee: 'A$0 a month', included: '10 completed assessment assignments a month', additional: 'Not available',
+    monthlyFee: 'A$0 a month', included: '10 assessment invitations a month', additional: 'Not available',
     manualWorkflow: 'Included', integrationAutomation: 'Not included',
   },
   {
@@ -82,14 +83,23 @@ export const PAID_PLAN_EXPLANATION =
   `Each additional completed assignment is charged at A$0.75 on ${TIER_PLUS} or A$0.85 on ${TIER_AUTOMATE}.`;
 
 /** Approved billing rules, worded for customers. */
-export const BILLING_RULES: string[] = [
-  'An LLN and a Digital assessment completed by the same learner under the same assignment count as one completion.',
-  'Invitations, reminders and abandoned assessments do not count.',
-  `Learners already in progress can finish after the ${TIER_FREE} monthly allowance is reached.`,
-  `New assessment starts are restricted once the ${TIER_FREE} allowance for the month is reached.`,
-  `${TIER_PLUS} and ${TIER_AUTOMATE} have no fixed monthly assessment cap.`,
-  `On ${TIER_PLUS} and ${TIER_AUTOMATE}, additional charges apply only to completed assignments above the 20 included each month.`,
+/** LLND Mate (free): counted by invitations sent (Product Owner decision, 10 Nov 2026). */
+export const FREE_TIER_RULES: string[] = [
+  `${TIER_FREE} includes 10 assessment invitations each month. An invitation counts when it is sent.`,
+  'An LLN and a Digital assessment sent together in one invitation count as one. Sent separately, they count as two.',
+  'Resending an invitation does not use another one. Invitations to “Test Test” are free and never count.',
+  'Deleting an assessment returns its invitation if it was sent this month. Learners already invited can always finish.',
 ];
+
+/** LLND Mate Plus and LLND Automate: counted by completed assignments (coming soon). */
+export const PAID_TIER_RULES: string[] = [
+  `${TIER_PLUS} and ${TIER_AUTOMATE} count completed assessment assignments. An LLN and a Digital assessment completed by the same learner under the same assignment count as one completion.`,
+  `${TIER_PLUS} and ${TIER_AUTOMATE} have no fixed monthly assessment cap.`,
+  `On ${TIER_PLUS} and ${TIER_AUTOMATE}, additional charges apply only to completed assignments above the 20 included each month. “Test Test” assessments are never charged.`,
+];
+
+/** All approved billing rules, worded for customers. */
+export const BILLING_RULES: string[] = [...FREE_TIER_RULES, ...PAID_TIER_RULES];
 
 /** Page titles for the public website and product (browser tab, bookmarks, search results). */
 export function llndDocumentTitle(routeKind: string): string {

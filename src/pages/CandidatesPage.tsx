@@ -1,3 +1,4 @@
+import { TestBadge } from '../components/TestBadge';
 import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Users, Mail, Plus, Search, Send, Bell, Eye, PlayCircle,
@@ -13,6 +14,8 @@ import type {
 import { STATUS_COLORS, STUDENT_STATUS_CONFIG, RECOMMENDATION_LABELS, RECOMMENDATION_COLORS } from '../lib/types';
 import { logAudit, enqueueAxcelerateWriteback } from '../lib/audit';
 import { UsageAllowanceNotice } from '../components/UsageAllowanceNotice';
+import { DeleteAssessmentDialog } from '../components/DeleteAssessmentDialog';
+import { deleteAssessmentAssignment, isInvitationAllowanceReached, isInvitationPlanUnconfirmed, looksLikeReservedTestName } from '../lib/planUsage';
 
 type StudentTab = 'in_progress' | 'completed';
 
@@ -394,6 +397,9 @@ export function CandidatesPage() {
   const [timelineInvitation, setTimelineInvitation] = useState<InvitationWithQualification | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<InvitationWithQualification | null>(null);
+  const [usageRefresh, setUsageRefresh] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewInvitationForm>(EMPTY_FORM);
   const [searchQuery, setSearchQuery] = useState('');
@@ -468,32 +474,37 @@ export function CandidatesPage() {
     setShowModal(true);
   }
 
-  async function handleDelete(inv: InvitationWithQualification) {
-    const axNote = inv.axcelerate_contact_id
-      ? `\n\nNote: this candidate was synced from aXcelerate (ID ${inv.axcelerate_contact_id}). You must also remove or inactivate the contact in aXcelerate, or clear the quiz flags — otherwise the sync will recreate this invitation automatically.`
-      : '';
-    if (!confirm(`Delete invitation for ${inv.candidate_name}?${axNote}\n\nThis action cannot be undone.`)) return;
-    setDeletingId(inv.id);
-    const { error: delErr } = await supabase.from('assessment_invitations').delete().eq('id', inv.id);
-    if (delErr) {
-      setError(delErr.message);
-    } else {
-      if (inv.axcelerate_contact_id) {
-        await supabase.from('axcelerate_inbound_sync_log').delete().eq('axcelerate_contact_id', inv.axcelerate_contact_id);
-      }
-      logAudit({
-        event_type: 'invitation.cancelled',
-        category: 'candidate_management',
-        description: `Invitation for ${inv.candidate_name} (${inv.candidate_email}) deleted`,
-        severity: 'warning',
-        source: 'admin',
-        invitation_id: inv.id,
-        qualification_id: inv.qualification_id ?? null,
-        event_data: { candidate_name: inv.candidate_name, candidate_email: inv.candidate_email },
-      });
-      setInvitations((prev) => prev.filter((i) => i.id !== inv.id));
-    }
+  // LLND Mate: deletion is a soft delete through the server (typed YES confirmation,
+  // RTO administrators only). Data is kept for paid restoration by LLND Mate support.
+  function handleDelete(inv: InvitationWithQualification) {
+    setNotice(null);
+    setDeleteTarget(inv);
+  }
+
+  async function confirmDelete(invitationId: string, confirmation: string): Promise<string | null> {
+    const inv = invitations.find((i) => i.id === invitationId);
+    if (!inv) return 'This assessment is no longer in the list.';
+    setDeletingId(invitationId);
+    const result = await deleteAssessmentAssignment(invitationId, confirmation);
     setDeletingId(null);
+    if (!result.ok) return result.message;
+    logAudit({
+      event_type: 'invitation.deleted',
+      category: 'candidate_management',
+      description: `Assessment for ${inv.candidate_name} deleted (restorable by LLND Mate support)`,
+      severity: 'warning',
+      source: 'admin',
+      invitation_id: inv.id,
+      qualification_id: inv.qualification_id ?? null,
+      event_data: { allowance_refunded: result.refunded, already_deleted: result.alreadyDeleted },
+    });
+    setInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+    setDeleteTarget(null);
+    setUsageRefresh((n) => n + 1);
+    setNotice(result.refunded
+      ? `Assessment for ${inv.candidate_name} deleted. Its invitation has been returned to this month’s allowance.`
+      : `Assessment for ${inv.candidate_name} deleted.`);
+    return null;
   }
 
   async function scheduleReminders(
@@ -561,7 +572,7 @@ export function CandidatesPage() {
         const { error: updateError } = await supabase
           .from('assessment_invitations')
           .update({
-            candidate_name: form.candidateName.trim(),
+            candidate_name: editingInvitation.is_test ? editingInvitation.candidate_name : form.candidateName.trim(),
             candidate_email: form.candidateEmail.trim(),
             qualification_id: form.qualificationId || null,
             due_date: form.dueDate || null,
@@ -612,7 +623,15 @@ export function CandidatesPage() {
             rto_name: orgName || null,
           } as any)
           .select().single();
-        if (invError) throw invError;
+        if (invError) {
+          if (isInvitationAllowanceReached(invError)) {
+            throw new Error('You’ve used all 10 free invitations for this month, so this invitation wasn’t sent. Learners you’ve already invited can still finish. Invitations to “Test Test” are still allowed. See Plan & usage for your reset date.');
+          }
+          if (isInvitationPlanUnconfirmed(invError)) {
+            throw new Error('Your organisation’s plan could not be confirmed, so this invitation wasn’t sent. Please contact LLND Mate support.');
+          }
+          throw invError;
+        }
         const invitation = invData as AssessmentInvitation;
 
         logAudit({
@@ -671,6 +690,7 @@ export function CandidatesPage() {
       }
 
       await loadData();
+      setUsageRefresh((n) => n + 1);
       closeModal();
     } catch (err: any) {
       setError(err.message || 'Failed to save invitation.');
@@ -719,7 +739,18 @@ export function CandidatesPage() {
         </button>
       </div>
 
-      <UsageAllowanceNotice />
+      <UsageAllowanceNotice refreshKey={usageRefresh} />
+      {notice && (
+        <div className="rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 flex justify-between gap-3" role="status">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="text-xs font-medium">Dismiss</button>
+        </div>
+      )}
+      <DeleteAssessmentDialog
+        target={deleteTarget ? { id: deleteTarget.id, learnerName: deleteTarget.candidate_name } : null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
 
       {error && (
         <div className="card p-4 border-rose-200 bg-rose-50">
@@ -832,7 +863,7 @@ export function CandidatesPage() {
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
                         <td className="table-cell">
-                          <div className="font-medium text-slate-900">{inv.candidate_name}</div>
+                          <div className="font-medium text-slate-900">{inv.candidate_name}{inv.is_test && <TestBadge />}</div>
                           <div className="text-xs text-slate-500">{inv.candidate_email}</div>
                           {inv.candidate_dob && (
                             <div className="text-xs text-slate-400 mt-0.5">DOB: {formatDate(inv.candidate_dob)}</div>
@@ -952,7 +983,7 @@ export function CandidatesPage() {
                 <div key={inv.id} className="card p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <div className="font-medium text-slate-900">{inv.candidate_name}</div>
+                      <div className="font-medium text-slate-900">{inv.candidate_name}{inv.is_test && <TestBadge />}</div>
                       <div className="text-xs text-slate-500">{inv.candidate_email}</div>
                       {inv.axcelerate_contact_id && (
                         <div className="flex items-center gap-1 mt-0.5">
@@ -1045,8 +1076,13 @@ export function CandidatesPage() {
                     id="candidate-name" type="text" required
                     value={form.candidateName}
                     onChange={(e) => setForm({ ...form, candidateName: e.target.value })}
-                    className="input" placeholder="Jane Smith" disabled={submitting}
+                    className="input" placeholder="Jane Smith" disabled={submitting || !!editingInvitation?.is_test}
                   />
+                  {editingInvitation?.is_test ? (
+                    <p className="text-xs text-slate-500 mt-1">This is a test assessment. The learner name can’t be changed.</p>
+                  ) : !editingInvitation && looksLikeReservedTestName(form.candidateName) ? (
+                    <p className="text-xs text-amber-700 mt-1">“Test Test” creates a free test assessment. It won’t count towards your allowance and is excluded from reports and integrations.</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="label" htmlFor="candidate-email">Candidate Email</label>

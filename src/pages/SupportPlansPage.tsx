@@ -95,6 +95,7 @@ export function SupportPlansPage() {
         .from('assessment_invitations')
         .select('*')
         .eq('status', 'completed')
+        .eq('is_test', false) // Test Test assessments are excluded from learner support workflows
         .order('completed_at', { ascending: false }),
     ]);
 

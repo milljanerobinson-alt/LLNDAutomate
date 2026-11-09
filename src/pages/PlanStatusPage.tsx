@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Info, Loader2, Lock, RefreshCw, XCircle } from 'lucide-react';
-import { BILLING_RULES, PLANS, TIER_PLUS } from '../lib/brand';
+import { FREE_TIER_RULES, PLANS, TIER_PLUS } from '../lib/brand';
 import { fetchPlanUsage, formatResetDate, type PlanUsageState } from '../lib/planUsage';
 
 // Signed-in "Plan & usage" page for RTO administrators.
 //
-// Every figure comes from the server (get_my_plan_usage). The page never
+// LLND Mate Free is counted by invitations sent. Every figure comes from the
+// server (get_my_plan_usage). The page never
 // computes usage, never shows a figure it could not confirm, and never treats an
 // unknown entitlement as an active free plan. It reads only; nothing here can
 // change a plan, an entitlement or a billing record. Paid tiers are shown as
@@ -16,7 +17,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Plan &amp; usage</h1>
-        <p className="text-sm text-slate-500 mt-1">Your LLND Mate plan and completed assessments this month.</p>
+        <p className="text-sm text-slate-500 mt-1">Your LLND Mate plan and assessment invitations this month.</p>
       </div>
       {children}
     </div>
@@ -72,9 +73,9 @@ function ComingSoon() {
 function Rules() {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="font-bold text-slate-900 mb-3">How completed assessments are counted</h2>
+      <h2 className="font-bold text-slate-900 mb-3">How invitations are counted</h2>
       <ul className="space-y-2">
-        {BILLING_RULES.slice(0, 4).map((rule) => (
+        {FREE_TIER_RULES.map((rule) => (
           <li key={rule} className="flex gap-2.5 text-sm text-slate-700 leading-relaxed">
             <CheckCircle2 className="w-4 h-4 text-success-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
             {rule}
@@ -143,9 +144,9 @@ export function PlanUsageView({ state, onRetry }: { state: PlanUsageState; onRet
     );
   }
 
-  const { completed, allowance, remaining, inProgress, resetDate, level } = state;
+  const { used, allowance, remaining, sentThisMonth, returnedByDeletion, testInvitations, resetDate, level } = state;
   const reset = formatResetDate(resetDate);
-  const pct = Math.min(100, Math.round((completed / allowance) * 100));
+  const pct = Math.min(100, Math.round((used / allowance) * 100));
   const bar = level === 'exhausted' ? 'bg-error-500' : level === 'near' ? 'bg-amber-500' : 'bg-primary-600';
 
   return (
@@ -160,62 +161,64 @@ export function PlanUsageView({ state, onRetry }: { state: PlanUsageState; onRet
               <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> Active
             </span>
           </div>
-          <p className="text-sm text-slate-600 mt-3">{allowance} completed assessments each month</p>
+          <p className="text-sm text-slate-600 mt-3">{allowance} invitations per month</p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">This month</p>
           <p className="text-2xl font-extrabold text-slate-900 mt-2" data-testid="usage-used">
-            {completed} of {allowance} assessments used
+            {used} of {allowance} invitations used
           </p>
           <div className="mt-3 h-3 rounded-full bg-slate-100 overflow-hidden" role="progressbar"
-            aria-label="Completed assessments this month" aria-valuemin={0} aria-valuemax={allowance} aria-valuenow={Math.min(completed, allowance)}>
+            aria-label="Invitations used this month" aria-valuemin={0} aria-valuemax={allowance} aria-valuenow={Math.min(used, allowance)}>
             <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
           </div>
           <div className="flex flex-wrap justify-between gap-2 mt-3 text-sm">
             <span className="font-semibold text-slate-800" data-testid="usage-remaining">
-              {remaining} {remaining === 1 ? 'assessment' : 'assessments'} remaining
+              {remaining} {remaining === 1 ? 'invitation' : 'invitations'} remaining
             </span>
             <span className="inline-flex items-center gap-1.5 text-slate-600" data-testid="usage-reset">
               <Clock className="w-4 h-4" aria-hidden="true" /> Resets {reset}
             </span>
           </div>
-          {completed > allowance && (
-            <p className="text-xs text-slate-500 mt-2">
-              {completed} assessments were completed this month. Learners who had already started were able to finish after the allowance was reached.
-            </p>
-          )}
         </div>
       </div>
 
       {level === 'empty' && (
-        <Notice tone="info" icon={Info} title="No completed assessments yet this month.">
-          <p>Usage is counted when a learner completes an assessment assignment, not when you send an invitation.</p>
+        <Notice tone="info" icon={Info} title="No invitations sent yet this month.">
+          <p>An invitation counts when it is sent. An LLN and a Digital assessment sent together count as one.</p>
         </Notice>
       )}
       {level === 'near' && (
         <Notice tone="warn" icon={AlertTriangle} title="Your free allowance is nearly used.">
           <p>
-            {remaining} {remaining === 1 ? 'assessment' : 'assessments'} left this month. When all {allowance} are used, new assessments
-            can’t be started until {reset}.
+            {remaining} {remaining === 1 ? 'invitation' : 'invitations'} left this month. When all {allowance} are used, you
+            won’t be able to send new invitations until {reset}.
           </p>
         </Notice>
       )}
       {level === 'exhausted' && (
-        <Notice tone="stop" icon={XCircle} title={`You’ve used all ${allowance} free assessments for this month.`}>
-          <p>No new assessments can be started until {reset}. Learners who have already started can still finish.</p>
-          <p>You can still send invitations, but invited learners won’t be able to start until the allowance resets.</p>
+        <Notice tone="stop" icon={XCircle} title={`You’ve used all ${allowance} free invitations for this month.`}>
+          <p>New invitations can’t be sent until {reset}. Learners you have already invited can still start and finish their assessments.</p>
+          <p>Deleting an assessment sent this month returns its invitation.</p>
         </Notice>
       )}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700 leading-relaxed">
-        <p>
-          <span className="font-semibold">{inProgress}</span> {inProgress === 1 ? 'learner has' : 'learners have'} started but not finished.
-          They don’t count until they complete, and they can always finish.
-        </p>
-        <p className="text-slate-500 mt-1">
-          Sending an invitation doesn’t reserve an assessment. A learner can start only while your monthly allowance has room.
-        </p>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700 leading-relaxed grid gap-3 sm:grid-cols-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sent this month</p>
+          <p className="text-lg font-bold text-slate-900 mt-1" data-testid="usage-sent">{sentThisMonth}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Returned by deletion</p>
+          <p className="text-lg font-bold text-slate-900 mt-1" data-testid="usage-returned">{returnedByDeletion}</p>
+          <p className="text-xs text-slate-500">Deleting an assessment sent this month returns its invitation.</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Test invitations</p>
+          <p className="text-lg font-bold text-slate-900 mt-1" data-testid="usage-tests">{testInvitations}</p>
+          <p className="text-xs text-slate-500">Invitations to “Test Test” are free and don’t count.</p>
+        </div>
       </div>
 
       <ComingSoon />

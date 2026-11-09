@@ -156,6 +156,10 @@ export interface AssessmentVersionHistory {
 }
 
 export interface AssessmentInvitation {
+  /** LLND Mate: server-set, permanent Test Test classification. */
+  is_test?: boolean;
+  /** LLND Mate soft deletion (deleted rows are hidden from RTO and learner access). */
+  deleted_at?: string | null;
   id: string;
   qualification_id: string | null;
   candidate_email: string;

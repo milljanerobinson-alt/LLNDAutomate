@@ -145,6 +145,7 @@ export function CompliancePage() {
       .from('assessment_invitations')
       .select('*, qualification:qualifications(id, code, name)')
       .eq('status', 'completed')
+      .eq('is_test', false) // LLND Mate: Test Test assessments are excluded from compliance reports and exports
       .order('completed_at', { ascending: false });
 
     if (err) {

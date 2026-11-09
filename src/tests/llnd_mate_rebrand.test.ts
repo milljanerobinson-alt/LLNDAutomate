@@ -209,7 +209,7 @@ describe('LLND Mate: accurate marketing content', () => {
 describe('LLND Mate: plans and billing rules', () => {
   it('matches the approved plan structure with full tier names', () => {
     expect(PLANS.map((p) => [p.name, p.availability, p.monthlyFee, p.included, p.additional, p.manualWorkflow, p.integrationAutomation])).toEqual([
-      ['LLND Mate', 'available', 'A$0 a month', '10 completed assessment assignments a month', 'Not available', 'Included', 'Not included'],
+      ['LLND Mate', 'available', 'A$0 a month', '10 assessment invitations a month', 'Not available', 'Included', 'Not included'],
       ['LLND Mate Plus', 'coming_soon', 'A$15 a month', '20 completed assessment assignments a month', 'A$0.75 each', 'Included', 'Not included'],
       ['LLND Automate', 'coming_soon', 'A$35 a month', '20 completed assessment assignments a month', 'A$0.85 each', 'Included', 'Planned'],
     ]);
@@ -221,13 +221,15 @@ describe('LLND Mate: plans and billing rules', () => {
   });
 
   it('states every approved billing rule', () => {
+    // LLND Mate Free is counted by invitations sent (PO decision 10 Nov 2026); paid tiers by completions.
     const joined = BILLING_RULES.join(' ');
-    expect(joined).toMatch(/An LLN and a Digital assessment completed by the same learner under the same assignment count as one completion/);
-    expect(joined).toMatch(/Invitations, reminders and abandoned assessments do not count/);
-    expect(joined).toMatch(/already in progress can finish after the LLND Mate monthly allowance is reached/);
-    expect(joined).toMatch(/New assessment starts are restricted once the LLND Mate allowance/);
+    expect(joined).toMatch(/LLND Mate includes 10 assessment invitations each month\. An invitation counts when it is sent\./);
+    expect(joined).toMatch(/An LLN and a Digital assessment sent together in one invitation count as one\. Sent separately, they count as two\./);
+    expect(joined).toMatch(/Resending an invitation does not use another one\. Invitations to “Test Test” are free and never count\./);
+    expect(joined).toMatch(/Deleting an assessment returns its invitation if it was sent this month\. Learners already invited can always finish\./);
+    expect(joined).toMatch(/LLND Mate Plus and LLND Automate count completed assessment assignments\. An LLN and a Digital assessment completed by the same learner under the same assignment count as one completion\./);
     expect(joined).toMatch(/LLND Mate Plus and LLND Automate have no fixed monthly assessment cap/);
-    expect(joined).toMatch(/additional charges apply only to completed assignments above the 20 included each month/);
+    expect(joined).toMatch(/additional charges apply only to completed assignments above the 20 included each month\. “Test Test” assessments are never charged\./);
   });
 
   it('pricing page is static and paid plans cannot be selected or bought', () => {

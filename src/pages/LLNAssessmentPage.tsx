@@ -12,8 +12,6 @@ import {
   LLN_SECTION_TIMES, type LLNSection, type LLNQuestion,
 } from '../lib/questions/llnQuestions';
 import { logAuditAnon } from '../lib/audit';
-import { AssessmentStartUnavailable } from '../components/AssessmentStartUnavailable';
-import { isAssessmentStartUnavailable } from '../lib/planUsage';
 
 const SECTIONS: LLNSection[] = ['reading', 'numeracy', 'writing', 'oral_communication', 'learning'];
 
@@ -70,8 +68,7 @@ type Phase =
   | 'question'
   | 'section_complete'
   | 'processing'
-  | 'done'
-  | 'unavailable';
+  | 'done';
 
 function initSectionState(): SectionState {
   return {
@@ -349,15 +346,10 @@ export function LLNAssessmentPage({ token }: { token: string }) {
 
   async function startAssessment() {
     if (!invitation) return;
-    const { error: startError } = await quizClient
+    await quizClient
       .from('assessment_invitations')
       .update({ status: 'in_progress', started_at: new Date().toISOString(), lln_status: 'in_progress' } as any)
       .eq('id', invitation.id);
-    // The server refuses new starts when the RTO cannot start more assessments this month.
-    if (isAssessmentStartUnavailable(startError)) {
-      setPhase('unavailable');
-      return;
-    }
 
     // Queue aXcelerate note for LLN quiz opened (idempotent — only fires once per invitation)
     await quizClient.from('axcelerate_writeback_queue').upsert(
@@ -525,8 +517,6 @@ export function LLNAssessmentPage({ token }: { token: string }) {
   }
 
   // ─── INVALID ────────────────────────────────────────────────────────────────
-  if (phase === 'unavailable') return <AssessmentStartUnavailable />;
-
   if (phase === 'invalid') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">

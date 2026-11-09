@@ -297,12 +297,13 @@ async function learnerInvitations(
 ): Promise<any[]> {
   const cols = "id, organisation_id, status, lln_status, digital_status, lln_token, digital_token, lln_completed_at, digital_completed_at, completed_at, created_at, lln_acsf_outcomes, digital_score, qualification_id, student_id, axcelerate_contact_id";
   const queries = [
-    supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("student_id", params.studentId).limit(50),
-    supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("axcelerate_contact_id", params.contactId).limit(50),
+    // LLND Mate: deleted and Test Test assignments are never reused as a learner's result.
+    supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("student_id", params.studentId).is("deleted_at", null).eq("is_test", false).limit(50),
+    supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID).eq("axcelerate_contact_id", params.contactId).is("deleted_at", null).eq("is_test", false).limit(50),
   ];
   if (params.dob && params.fullName.length > 2) {
     queries.push(supabase.from("assessment_invitations").select(cols).eq("organisation_id", INTEGRATION_ORGANISATION_ID)
-      .is("student_id", null).is("axcelerate_contact_id", null)
+      .is("student_id", null).is("axcelerate_contact_id", null).is("deleted_at", null).eq("is_test", false)
       .eq("candidate_dob", params.dob).ilike("candidate_name", escapeLike(params.fullName)).limit(20));
   }
   const results = await Promise.all(queries);
@@ -931,7 +932,9 @@ Deno.serve(async (req: Request) => {
           .from("assessment_invitations")
           .select("id").eq("organisation_id", INTEGRATION_ORGANISATION_ID)
           .eq("id", existingLog.invitation_id)
+          .is("deleted_at", null)
           .maybeSingle();
+        // A soft-deleted invitation counts as gone, as a hard-deleted one did before.
         invitationGone = !existingInv;
       }
       if (invitationGone) {

@@ -34,7 +34,7 @@ export function Footer() {
             </a>
             <p className="text-sm leading-relaxed max-w-sm">
               Adaptive LLN assessments and practical digital skills checks for Australian Registered Training Organisations.
-              Start free with 10 completed assessments every month.
+              Start free with 10 assessment invitations every month.
             </p>
           </div>
           {COLS.map((col) => (

@@ -123,7 +123,7 @@ export function isEiosRoute(hash: string): boolean {
   const h = hash.replace(/^#\/?/, '').split('?')[0];
   if (!h || h === '') return true;
   const first = h.split('/')[0];
-  return ['engineering', 'login', 'oauth'].includes(first);
+  return ['engineering', 'login', 'oauth', 'operator'].includes(first);
 }
 
 /**

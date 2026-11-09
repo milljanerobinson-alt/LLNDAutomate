@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { BrandMark } from '../components/marketing/BrandMark';
-import { FREE_MONTHLY_COMPLETIONS, PRODUCT_NAME, STAFF_LOGIN_HASH, TIER_FREE } from '../lib/brand';
+import { FREE_MONTHLY_INVITATIONS, PRODUCT_NAME, STAFF_LOGIN_HASH, TIER_FREE } from '../lib/brand';
 
 function nav(hash: string) { window.location.href = hash; }
 
@@ -73,7 +73,7 @@ export function SignUpPage() {
             <CheckCircle2 className="w-10 h-10 text-success-600" />
           </div>
           <h2 className="text-3xl font-extrabold text-slate-900 mb-3">You're all set!</h2>
-          <p className="text-slate-500 mb-2">Your free {PRODUCT_NAME} account is ready. The {TIER_FREE} free plan includes {FREE_MONTHLY_COMPLETIONS} completed assessment assignments each month.</p>
+          <p className="text-slate-500 mb-2">Your free {PRODUCT_NAME} account is ready. The {TIER_FREE} free plan includes {FREE_MONTHLY_INVITATIONS} assessment invitations each month.</p>
           <p className="text-slate-400 text-sm">Redirecting you to your dashboard...</p>
           <Loader2 className="w-6 h-6 animate-spin text-primary-400 mx-auto mt-4" />
         </div>
@@ -123,7 +123,7 @@ export function SignUpPage() {
                 <Building2 className="w-6 h-6 text-primary-600" />
               </div>
               <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Create your free account</h1>
-              <p className="text-slate-500 text-sm">Tell us about your RTO. The {TIER_FREE} free plan includes {FREE_MONTHLY_COMPLETIONS} completed assessment assignments each month.</p>
+              <p className="text-slate-500 text-sm">Tell us about your RTO. The {TIER_FREE} free plan includes {FREE_MONTHLY_INVITATIONS} assessment invitations each month.</p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-5">
               <div>
@@ -262,7 +262,7 @@ export function SignUpPage() {
               <div className="bg-primary-50 border border-primary-100 rounded-xl px-4 py-3 flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-primary-800">
-                  <strong>{TIER_FREE} free plan</strong>: {FREE_MONTHLY_COMPLETIONS} completed assessment assignments each month. No credit card needed.
+                  <strong>{TIER_FREE} free plan</strong>: {FREE_MONTHLY_INVITATIONS} assessment invitations each month. No credit card needed.
                 </p>
               </div>
 

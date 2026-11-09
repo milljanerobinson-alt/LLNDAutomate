@@ -6,7 +6,7 @@ const STEPS = [
   {
     icon: Building2,
     title: 'Create your free RTO account',
-    body: 'Register your organisation online. LLND Mate is free and includes 10 completed assessment assignments each month and needs no credit card.',
+    body: 'Register your organisation online. LLND Mate is free, includes 10 assessment invitations each month and needs no credit card.',
     points: ['Self-service registration', 'Invite your staff by email', 'Separate Administration, Candidate Support and Technical workspaces'],
   },
   {
