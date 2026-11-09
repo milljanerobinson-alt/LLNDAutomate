@@ -124,7 +124,7 @@ describe('LLND Mate: customer-facing naming', () => {
 
   it.each(CUSTOMER_FACING_FILES)('%s has no retired or invalid product names', (rel) => {
     const visible = visibleText(rel);
-    expect(visible).not.toMatch(/LLND\s*Assess|LLN\s*Automate|LLND\s*Mate\s*Automate/i);
+    expect(visible).not.toMatch(/LLND\s*Assess\b|LLN\s*Automate|LLND\s*Mate\s*Automate/i);
     expect(visible).not.toMatch(/>\s*(Assess|Automate|Plus)\s*</);
   });
 

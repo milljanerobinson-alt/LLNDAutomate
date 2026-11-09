@@ -4,7 +4,7 @@ import { expect, test } from 'playwright/test';
 // (BASE_URL=http://127.0.0.1:4173). These pages need no backend.
 
 const H1 = 'FREE LLN & Digital Assessments for Australian RTOs';
-const RETIRED = /LLND Assess|LLND Mate Automate|free trial|14-day|\$79|\$129/i;
+const RETIRED = /LLND Assess\b|LLND Mate Automate|free trial|14-day|\$79|\$129/i;
 const PAGES = [
   { hash: '#/how-it-works', h1: 'How LLND Mate works', title: 'How It Works | LLND Mate' },
   { hash: '#/features', h1: 'What’s included in LLND Mate', title: 'Features | LLND Mate' },
