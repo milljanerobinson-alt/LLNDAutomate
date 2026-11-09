@@ -74,7 +74,7 @@ describe('Plan & usage (invitations): parsing the server response', () => {
     expect(isInvitationAllowanceReached({ message: 'invitation_allowance_reached' })).toBe(true);
     expect(isInvitationPlanUnconfirmed({ message: 'invitation_plan_unconfirmed' })).toBe(true);
     expect(isInvitationAllowanceReached({ message: 'duplicate key' })).toBe(false);
-    for (const yes of ['Test Test', 'test test', '  TEST   test ', 'Test Test', 'Test​ Test', 'Ｔest Ｔest']) expect(looksLikeReservedTestName(yes), yes).toBe(true);
+    for (const yes of ['Test Test', 'test test', '  TEST   test ', 'Test\u00a0Test', 'Test\u200b Test', '\uff34est \uff34est']) expect(looksLikeReservedTestName(yes), yes).toBe(true);
     for (const no of ['Test Testerson', 'Testa Test', 'Test Test Smith', 'TestTest', 'Test-Test', 'Test', '']) expect(looksLikeReservedTestName(no), no).toBe(false);
     expect(formatResetDate('2026-12-01')).toBe('1 December 2026');
   });

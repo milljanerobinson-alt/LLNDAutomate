@@ -109,8 +109,8 @@ export function isInvitationPlanUnconfirmed(error: unknown): boolean {
 /** Same normalisation as the database's llnd_is_reserved_test_name (display hint only; the server decides). */
 export function looksLikeReservedTestName(name: string): boolean {
   return name.normalize('NFKC').toLowerCase()
-    .replace(/[​-‍⁠﻿­]/g, '')
-    .replace(/[\s   -     　]+/g, ' ')
+    .replace(/[\u200b-\u200d\u2060\ufeff\u00ad]/g, '')
+    .replace(/[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, ' ')
     .trim() === 'test test';
 }
 
