@@ -123,8 +123,8 @@ DECLARE c uuid := mt.org('c'); i uuid; before int;
 BEGIN
   i := mt.invite(c);
   before := mt.used(c);
-  INSERT INTO public.email_queue (invitation_id, email_type) VALUES (i, 'invitation');
-  INSERT INTO public.email_queue (invitation_id, email_type) VALUES (i, 'invitation');
+  INSERT INTO public.email_queue (organisation_id, recipient_email, invitation_id, email_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = i), 'learner@example.invalid', i, 'invitation', gen_random_uuid()::text);
+  INSERT INTO public.email_queue (organisation_id, recipient_email, invitation_id, email_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = i), 'learner@example.invalid', i, 'invitation', gen_random_uuid()::text);
   PERFORM mt.ok(mt.used(c) = before, 'resending an invitation does not use another spot');
   PERFORM mt.ok(mt.refused(format('INSERT INTO public.assessment_invitations (organisation_id, candidate_name) VALUES (%L, ''No Email'')', c), 'null value in column "candidate_email" of relation "assessment_invitations" violates not-null constraint')
     OR mt.used(c) = before, 'failed invitation insert is rolled back');
@@ -187,9 +187,9 @@ DECLARE t uuid := mt.id('test1');
 BEGIN
   INSERT INTO public.support_cases (organisation_id, invitation_id) VALUES (mt.org('a'), t);
   PERFORM mt.ok((SELECT count(*) FROM public.support_cases WHERE invitation_id = t) = 0, 'support-case automation suppressed for tests');
-  INSERT INTO public.axcelerate_writeback_queue (invitation_id, event_type, idempotency_key) VALUES (t, 'assessment_completed', 'k-' || t);
+  INSERT INTO public.axcelerate_writeback_queue (organisation_id, invitation_id, event_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = t), t, 'assessment_completed', 'k-' || t);
   PERFORM mt.ok((SELECT count(*) FROM public.axcelerate_writeback_queue WHERE invitation_id = t) = 0, 'aXcelerate write-back suppressed for tests');
-  INSERT INTO public.email_queue (invitation_id, email_type, idempotency_key) VALUES (t, 'invitation', 'e-' || t);
+  INSERT INTO public.email_queue (organisation_id, recipient_email, invitation_id, email_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = t), 'learner@example.invalid', t, 'invitation', 'e-' || t);
   PERFORM mt.ok((SELECT count(*) FROM public.email_queue WHERE invitation_id = t) = 1, 'test learners still receive their invitation email');
 END $$;
 
@@ -311,13 +311,13 @@ END $$;
 DO $$
 DECLARE c uuid := mt.org('c'); i uuid := mt.invite(c);
 BEGIN
-  INSERT INTO public.email_queue (invitation_id, email_type, idempotency_key) VALUES (i, 'reminder_1', 'r-' || i);
-  INSERT INTO public.axcelerate_writeback_queue (invitation_id, event_type, idempotency_key) VALUES (i, 'invitation_sent', 'w-' || i);
+  INSERT INTO public.email_queue (organisation_id, recipient_email, invitation_id, email_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = i), 'learner@example.invalid', i, 'reminder_1', 'r-' || i);
+  INSERT INTO public.axcelerate_writeback_queue (organisation_id, invitation_id, event_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = i), i, 'invitation_sent', 'w-' || i);
   PERFORM mt.del(c, i);
   PERFORM mt.ok((SELECT status FROM public.email_queue WHERE invitation_id = i) = 'cancelled', 'pending reminder cancelled on deletion');
   PERFORM mt.ok((SELECT status FROM public.axcelerate_writeback_queue WHERE invitation_id = i) = 'cancelled', 'pending aXcelerate write-back cancelled on deletion');
-  INSERT INTO public.email_queue (invitation_id, email_type, idempotency_key) VALUES (i, 'reminder_2', 'r2-' || i);
-  INSERT INTO public.axcelerate_writeback_queue (invitation_id, event_type, idempotency_key) VALUES (i, 'assessment_completed', 'w2-' || i);
+  INSERT INTO public.email_queue (organisation_id, recipient_email, invitation_id, email_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = i), 'learner@example.invalid', i, 'reminder_2', 'r2-' || i);
+  INSERT INTO public.axcelerate_writeback_queue (organisation_id, invitation_id, event_type, idempotency_key) VALUES ((SELECT organisation_id FROM public.assessment_invitations WHERE id = i), i, 'assessment_completed', 'w2-' || i);
   INSERT INTO public.support_cases (organisation_id, invitation_id) VALUES (c, i);
   PERFORM mt.ok((SELECT count(*) FROM public.email_queue WHERE invitation_id = i) = 1
             AND (SELECT count(*) FROM public.axcelerate_writeback_queue WHERE invitation_id = i) = 1
