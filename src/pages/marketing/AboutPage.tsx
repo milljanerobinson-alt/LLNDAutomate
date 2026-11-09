@@ -4,9 +4,9 @@ import { PRIMARY_CTA, SIGNUP_HASH } from '../../lib/brand';
 
 const PRINCIPLES = [
   { title: 'Accurate results', body: 'Results are compared with the requirements your RTO approves. When a result cannot be confirmed, it is sent to your staff to review rather than accepted automatically.' },
-  { title: 'Staff decide', body: 'LLND Assess reports results and highlights support needs. It never makes enrolment decisions for you.' },
+  { title: 'Staff decide', body: 'LLND Mate reports results and highlights support needs. It never makes enrolment decisions for you.' },
   { title: 'Simple for learners', body: 'Short assessments from a personal link, on any device, with progress saved.' },
-  { title: 'Clear pricing', body: 'Start free with 10 completed assessments each month. Paid plans are priced per completed assessment above the included allowance.' },
+  { title: 'Clear pricing', body: 'Start free on LLND Mate with 10 completed assessment assignments each month. LLND Mate Plus and LLND Automate will include 20 a month, with a set price for each additional completion.' },
 ];
 
 export function AboutPage({ currentHash }: { currentHash: string }) {
@@ -15,9 +15,9 @@ export function AboutPage({ currentHash }: { currentHash: string }) {
       <section className="bg-gradient-to-b from-primary-50/70 to-white px-4 sm:px-6 py-14 sm:py-20">
         <div className="max-w-3xl mx-auto">
           <p className="text-sm font-semibold text-primary-700 mb-3">About</p>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-6">About LLND Assess</h1>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-6">About LLND Mate</h1>
           <p className="text-lg text-slate-600 leading-relaxed">
-            LLND Assess helps Australian Registered Training Organisations review prospective learners’ language, literacy,
+            LLND Mate helps Australian Registered Training Organisations review prospective learners’ language, literacy,
             numeracy and digital skills, identify who may need support, and keep a clear record of the results.
           </p>
         </div>

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { MarketingShell, SectionIntro } from '../../components/marketing/MarketingShell';
 import {
-  BILLING_RULES, FREE_MONTHLY_COMPLETIONS, HOME_DESCRIPTION, HOME_H1, HOW_IT_WORKS_HASH,
+  BILLING_RULES, FREE_MONTHLY_COMPLETIONS, TIER_AUTOMATE, TIER_FREE, TIER_PLUS, HOME_DESCRIPTION, HOME_H1, HOW_IT_WORKS_HASH,
   PRIMARY_CTA, PRIMARY_OFFER, PRIMARY_OFFER_SUPPORT, SECONDARY_CTA, SIGNUP_HASH,
 } from '../../lib/brand';
 import { FAQS } from '../../lib/marketingContent';
@@ -67,7 +67,7 @@ const BENEFITS = [
   { icon: Clock, title: 'Shorter for learners', body: 'Adaptive LLN sections stop once a learner’s level is clear, so learners are not asked more questions than needed.' },
   { icon: UserCheck, title: 'Clear progress for learners', body: 'Learners see each assigned assessment marked as not started, in progress or completed.' },
   { icon: Users, title: 'Simple for your team', body: 'Separate Administration, Candidate Support and Technical workspaces, so each staff member sees what their role needs.' },
-  { icon: ShieldCheck, title: 'Your staff stay in control', body: 'Results inform your decisions. LLND Assess never makes enrolment decisions for you.' },
+  { icon: ShieldCheck, title: 'Your staff stay in control', body: 'Results inform your decisions. LLND Mate never makes enrolment decisions for you.' },
 ];
 
 // ─── Page ───────────────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ export function HomePage({ currentHash }: { currentHash: string }) {
           </SectionIntro>
           <div className="space-y-4 text-slate-600 leading-relaxed lg:pt-9">
             <p>
-              LLND Assess gives your RTO one consistent, evidence-based way to complete that review: learners take short
+              LLND Mate gives your RTO one consistent, evidence-based way to complete that review: learners take short
               online assessments, and your staff see results against the requirements you set for each course.
             </p>
             <p>
@@ -160,7 +160,7 @@ export function HomePage({ currentHash }: { currentHash: string }) {
       {/* What it does */}
       <section className="py-16 sm:py-20 bg-slate-50" aria-labelledby="how-heading">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <SectionIntro id="how-heading" eyebrow="What LLND Assess does" title="From invitation to support plan">
+          <SectionIntro id="how-heading" eyebrow="What LLND Mate does" title="From invitation to support plan">
             <p>Everything your team needs to assess prospective learners and act on the results.</p>
           </SectionIntro>
           <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -240,7 +240,7 @@ export function HomePage({ currentHash }: { currentHash: string }) {
       <section className="py-16 sm:py-20" aria-labelledby="free-heading">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
           <SectionIntro id="free-heading" eyebrow="Pricing" title={`${FREE_MONTHLY_COMPLETIONS} free completed assessments every month`}>
-            <p>Start on the Free plan at no cost. Paid plans with more completions are coming soon.</p>
+            <p>Start on {TIER_FREE} at no cost. {TIER_PLUS} and {TIER_AUTOMATE}, for more assessment volume and premium automation, are coming soon.</p>
           </SectionIntro>
           <div className="rounded-2xl border border-slate-200 p-6 lg:mt-9">
             <h3 className="font-bold text-slate-900 mb-4">How the allowance works</h3>

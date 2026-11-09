@@ -20,10 +20,10 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
 };
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  invitation: "Your LLND Assess assessment Invitation",
-  reminder_1: "Reminder: Complete Your LLND Assess assessment",
-  reminder_2: "Second Reminder: Your LLND Assess assessment is Pending",
-  reminder_3: "Final Reminder: Action Required — LLND Assess assessment",
+  invitation: "Your LLND Mate assessment Invitation",
+  reminder_1: "Reminder: Complete Your LLND Mate assessment",
+  reminder_2: "Second Reminder: Your LLND Mate assessment is Pending",
+  reminder_3: "Final Reminder: Action Required — LLND Mate assessment",
   completion_admin: "Assessment Completed — Review Required",
   completion_student: "Your Assessment Has Been Submitted",
 };
@@ -79,10 +79,10 @@ function buildContent(
     case "invitation":
       html = buildEmailHtml(
         orgName,
-        "You've Been Invited to Complete Your LLND Assess assessment",
+        "You've Been Invited to Complete Your LLND Mate assessment",
         "Language, Literacy, Numeracy & Digital Skills Assessment",
         `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${name},</p>
-         <p style="color:#475569;font-size:15px;line-height:1.6;">You have been invited to complete your LLND Assess (Language, Literacy, Numeracy &amp; Digital) assessment${qualificationName ? ` as part of your enrolment in <strong>${qualificationName}</strong>` : ""}. You can complete this at your own pace using the link below.</p>
+         <p style="color:#475569;font-size:15px;line-height:1.6;">You have been invited to complete your LLND Mate (Language, Literacy, Numeracy &amp; Digital) assessment${qualificationName ? ` as part of your enrolment in <strong>${qualificationName}</strong>` : ""}. You can complete this at your own pace using the link below.</p>
          ${portalUrl ? `<p style="margin:20px 0;"><a href="${portalUrl}" style="${BTN}">Start My Assessment</a></p>` : ""}
          ${dueDate ? `<p style="color:#475569;font-size:14px;">Please complete your assessment by: <strong>${dueDate}</strong></p>` : ""}
          <p style="color:#475569;font-size:14px;margin-top:20px;">If you have any questions, please contact your trainer or training provider.</p>`,
@@ -93,9 +93,9 @@ function buildContent(
       html = buildEmailHtml(
         orgName,
         "Friendly Reminder: Your Assessment is Waiting",
-        "You have a pending LLND Assess assessment",
+        "You have a pending LLND Mate assessment",
         `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${name},</p>
-         <p style="color:#475569;font-size:15px;line-height:1.6;">This is a friendly reminder that you have a pending LLND Assess assessment to complete. It only takes a short time and can be done from any device.</p>
+         <p style="color:#475569;font-size:15px;line-height:1.6;">This is a friendly reminder that you have a pending LLND Mate assessment to complete. It only takes a short time and can be done from any device.</p>
          ${portalUrl ? `<p style="margin:20px 0;"><a href="${portalUrl}" style="${BTN}">Continue My Assessment</a></p>` : ""}
          ${dueDate ? `<p style="color:#475569;font-size:14px;">Completion due: <strong>${dueDate}</strong></p>` : ""}
          <p style="color:#475569;font-size:14px;margin-top:20px;">If you have already completed your assessment, please disregard this message.</p>`,
@@ -106,9 +106,9 @@ function buildContent(
       html = buildEmailHtml(
         orgName,
         "Second Reminder: Please Complete Your Assessment",
-        "Action still required — LLND Assess assessment pending",
+        "Action still required — LLND Mate assessment pending",
         `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${name},</p>
-         <p style="color:#475569;font-size:15px;line-height:1.6;">We noticed your LLND Assess assessment is still incomplete. Completing this assessment helps us tailor the right support for you throughout your training.</p>
+         <p style="color:#475569;font-size:15px;line-height:1.6;">We noticed your LLND Mate assessment is still incomplete. Completing this assessment helps us tailor the right support for you throughout your training.</p>
          ${portalUrl ? `<p style="margin:20px 0;"><a href="${portalUrl}" style="${BTN}">Complete My Assessment Now</a></p>` : ""}
          ${dueDate ? `<p style="color:#e53e3e;font-size:14px;font-weight:600;">Due date: ${dueDate}</p>` : ""}
          <p style="color:#475569;font-size:14px;margin-top:20px;">Please contact your trainer if you are experiencing any difficulties accessing the assessment.</p>`,
@@ -119,9 +119,9 @@ function buildContent(
       html = buildEmailHtml(
         orgName,
         "Final Reminder: Assessment Due Soon",
-        "Urgent — please complete your LLND Assess assessment",
+        "Urgent — please complete your LLND Mate assessment",
         `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${name},</p>
-         <p style="color:#e53e3e;font-size:15px;line-height:1.6;font-weight:600;">This is your final reminder to complete your LLND Assess assessment.</p>
+         <p style="color:#e53e3e;font-size:15px;line-height:1.6;font-weight:600;">This is your final reminder to complete your LLND Mate assessment.</p>
          <p style="color:#475569;font-size:15px;line-height:1.6;">Completing this assessment is a requirement of your enrolment${qualificationName ? ` in <strong>${qualificationName}</strong>` : ""}. Please complete it as soon as possible.</p>
          ${portalUrl ? `<p style="margin:20px 0;"><a href="${portalUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;margin:16px 0;">Complete Assessment — Final Reminder</a></p>` : ""}
          ${dueDate ? `<p style="color:#dc2626;font-size:14px;font-weight:600;">Due: ${dueDate}</p>` : ""}
@@ -133,8 +133,8 @@ function buildContent(
       html = buildEmailHtml(
         orgName,
         "Assessment Completed — Trainer Review Required",
-        `${name} has submitted their LLND Assess assessment`,
-        `<p style="color:#475569;font-size:15px;line-height:1.6;">A learner has completed their LLND Assess assessment and their results are ready for your review.</p>
+        `${name} has submitted their LLND Mate assessment`,
+        `<p style="color:#475569;font-size:15px;line-height:1.6;">A learner has completed their LLND Mate assessment and their results are ready for your review.</p>
          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
            <tr><td style="padding:8px 12px;background:#f8fafc;border-radius:4px;font-size:14px;font-weight:600;color:#374151;width:140px;">Learner</td><td style="padding:8px 12px;font-size:14px;color:#475569;">${name}</td></tr>
            ${qualificationName ? `<tr><td style="padding:8px 12px;background:#f8fafc;border-radius:4px;font-size:14px;font-weight:600;color:#374151;">Qualification</td><td style="padding:8px 12px;font-size:14px;color:#475569;">${qualificationName}</td></tr>` : ""}
@@ -149,9 +149,9 @@ function buildContent(
       html = buildEmailHtml(
         orgName,
         "Your Assessment Has Been Submitted",
-        "LLND Assess assessment completed successfully",
+        "LLND Mate assessment completed successfully",
         `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${name},</p>
-         <p style="color:#475569;font-size:15px;line-height:1.6;">Your LLND Assess assessment has been successfully submitted. Your trainer will review your results and be in touch with any next steps or support recommendations.</p>
+         <p style="color:#475569;font-size:15px;line-height:1.6;">Your LLND Mate assessment has been successfully submitted. Your trainer will review your results and be in touch with any next steps or support recommendations.</p>
          ${completedAt ? `<p style="color:#475569;font-size:14px;">Submitted: <strong>${completedAt}</strong></p>` : ""}
          <p style="color:#475569;font-size:14px;margin-top:20px;">Thank you for completing your assessment.</p>`,
       );
@@ -163,7 +163,7 @@ function buildContent(
         "Assessment Update",
         "",
         `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${name},</p>
-         <p style="color:#475569;font-size:15px;line-height:1.6;">There is an update regarding your LLND Assess assessment. Please contact your trainer for details.</p>`,
+         <p style="color:#475569;font-size:15px;line-height:1.6;">There is an update regarding your LLND Mate assessment. Please contact your trainer for details.</p>`,
       );
   }
 
@@ -237,7 +237,7 @@ Deno.serve(async (req: Request) => {
     const brandingFor = async (organisationId: string | null | undefined) => {
       const profile = await emailProfileFor(organisationId);
       return {
-        orgName: (profile.branding.name as string) || "LLND Assess",
+        orgName: (profile.branding.name as string) || "LLND Mate",
         adminEmail: (profile.branding.contact_email as string) || "",
         emailSettings: profile.emailSettings,
       };

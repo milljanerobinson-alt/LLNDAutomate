@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { TopNav } from './TopNav';
 import { Footer } from './Footer';
 
-/** Shared layout for LLND Assess public pages: skip link, navigation, main landmark, footer. */
+/** Shared layout for LLND Mate public pages: skip link, navigation, main landmark, footer. */
 export function MarketingShell({ currentHash, children }: { currentHash: string; children: ReactNode }) {
   useEffect(() => { window.scrollTo(0, 0); }, [currentHash]);
   return (

@@ -1,12 +1,12 @@
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { MarketingShell } from '../components/marketing/MarketingShell';
-import { BILLING_RULES, PLANS, PRIMARY_CTA, SIGNUP_HASH } from '../lib/brand';
+import { BILLING_RULES, PAID_PLAN_EXPLANATION, PLANS, PRIMARY_CTA, SIGNUP_HASH, TIER_AUTOMATE, TIER_FREE, TIER_PLUS } from '../lib/brand';
 
 // Static, approved plan structure. Billing for paid plans is not implemented
-// yet, so Plus and Automate are shown as coming soon and cannot be selected.
+// yet, so LLND Mate Plus and LLND Automate are shown as coming soon and cannot be selected.
 const ROWS: { label: string; key: 'monthlyFee' | 'included' | 'additional' | 'manualWorkflow' | 'integrationAutomation' }[] = [
   { label: 'Monthly base fee', key: 'monthlyFee' },
-  { label: 'Included completed assessments', key: 'included' },
+  { label: 'Included each month', key: 'included' },
   { label: 'Additional completions', key: 'additional' },
   { label: 'Manual assessment workflow', key: 'manualWorkflow' },
   { label: 'Premium integration automation', key: 'integrationAutomation' },
@@ -20,7 +20,7 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
           <p className="text-sm font-semibold text-primary-700 mb-3">Pricing</p>
           <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">Start free. Pay only when you need more.</h1>
           <p className="text-lg text-slate-600 leading-relaxed">
-            The Free plan includes 10 completed assessments every month. Paid plans are coming soon.
+            {TIER_FREE} is free and includes 10 completed assessment assignments every month. {TIER_PLUS} and {TIER_AUTOMATE} are coming soon.
           </p>
         </div>
       </section>
@@ -31,12 +31,13 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
             const available = plan.availability === 'available';
             return (
               <div key={plan.id} className={`rounded-2xl border-2 p-6 flex flex-col ${available ? 'border-primary-500 shadow-lg' : 'border-slate-200'}`}>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-start justify-between gap-3 mb-1">
                   <h2 className="text-xl font-extrabold text-slate-900">{plan.name}</h2>
                   <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${available ? 'bg-success-50 text-success-700 border border-success-200' : 'bg-slate-100 text-slate-600'}`}>
                     {available ? 'Available now' : 'Coming soon'}
                   </span>
                 </div>
+                <p className="text-sm text-slate-500 mb-4">{plan.summary}</p>
                 <p className="text-3xl font-extrabold text-slate-900 mb-1">{plan.monthlyFee}</p>
                 <p className="text-sm text-slate-600 mb-5">{plan.included}</p>
                 <dl className="space-y-2 text-sm mb-6 flex-1">
@@ -49,7 +50,7 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
                     {PRIMARY_CTA} <ArrowRight className="w-4 h-4" aria-hidden="true" />
                   </a>
                 ) : (
-                  <p className="text-sm text-slate-500 text-center py-3 rounded-xl bg-slate-50">Not yet available</p>
+                  <p className="text-sm text-slate-500 text-center py-3 rounded-xl bg-slate-50">Not yet available to purchase</p>
                 )}
               </div>
             );
@@ -59,10 +60,11 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
 
       <section className="px-4 sm:px-6 pb-14" aria-labelledby="compare-heading">
         <div className="max-w-6xl mx-auto">
-          <h2 id="compare-heading" className="text-2xl font-extrabold text-slate-900 mb-5">Compare plans</h2>
+          <h2 id="compare-heading" className="text-2xl font-extrabold text-slate-900 mb-3">Compare plans</h2>
+          <p className="text-slate-600 leading-relaxed mb-5 max-w-3xl">{PAID_PLAN_EXPLANATION}</p>
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-sm text-left min-w-[560px]">
-              <caption className="sr-only">LLND Assess plan comparison</caption>
+              <caption className="sr-only">LLND Mate plan comparison</caption>
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-semibold">Feature</th>
@@ -97,7 +99,7 @@ export function PricingPage({ currentHash }: { currentHash: string }) {
               </li>
             ))}
           </ul>
-          <p className="text-sm text-slate-500 mt-6">Prices are in Australian dollars. Paid plans are not yet available to purchase.</p>
+          <p className="text-sm text-slate-500 mt-6">Prices are in Australian dollars. {TIER_PLUS} and {TIER_AUTOMATE} are not yet available to purchase.</p>
         </div>
       </section>
     </MarketingShell>

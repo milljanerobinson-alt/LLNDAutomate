@@ -202,7 +202,7 @@ Deno.serve(async (req: Request) => {
     const settings: Record<string, any> = {};
     (settingsRows || []).forEach((s: any) => { settings[s.key] = s.value; });
 
-    const orgName: string = organisationProfile.branding.name || "LLND Assess";
+    const orgName: string = organisationProfile.branding.name || "LLND Mate";
     const adminEmail: string = organisationProfile.branding.contact_email || "";
     const RESEND_API_KEY: string = Deno.env.get("RESEND_API_KEY") || (typeof settings["RESEND_API_KEY"] === "string" ? settings["RESEND_API_KEY"] : "");
     const portalBase = Deno.env.get("SITE_URL") || "https://app.example.com";

@@ -42,7 +42,7 @@ export function TopNav({ currentHash }: TopNavProps) {
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
-        <a href="#/" className="flex-shrink-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" aria-label="LLND Assess home">
+        <a href="#/" className="flex-shrink-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500" aria-label="LLND Mate home">
           <BrandMark showDescriptor />
         </a>
 

@@ -48,14 +48,14 @@ const test = base.extend<{ runtimeEvidence: RuntimeEvidence }>({
   },
 });
 
-test.describe('LLND Assess staging smoke', () => {
+test.describe('LLND Mate staging smoke', () => {
   test('LLND root loads with the expected product context', async ({ page, runtimeEvidence: _runtime }) => {
     const response = await page.goto('/');
 
     expect(response?.ok()).toBe(true);
-    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Assess');
-    await expect(page.locator('body')).toContainText('LLND Assess');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('FREE Adaptive LLN & Digital Assessments for Australian RTOs');
+    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Mate');
+    await expect(page.locator('body')).toContainText('LLND Mate');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('FREE LLN & Digital Assessments for Australian RTOs');
   });
 
   test('EIOS remains isolated under /eios', async ({ page, runtimeEvidence: _runtime }) => {
@@ -73,7 +73,7 @@ test.describe('LLND Assess staging smoke', () => {
     await expect(backToWebsite).toBeVisible();
     await backToWebsite.click();
     await expect(page).toHaveURL((url) => url.origin === new URL(test.info().project.use.baseURL as string).origin && url.pathname === '/' && !url.hash);
-    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Assess');
+    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Mate');
   });
 
   test('legacy /llnd route migrates safely to LLND root', async ({ page, runtimeEvidence: _runtime }) => {
@@ -81,7 +81,7 @@ test.describe('LLND Assess staging smoke', () => {
 
     expect(response?.ok()).toBe(true);
     await expect(page).toHaveURL((url) => url.pathname === '/');
-    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Assess');
+    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Mate');
   });
 
   test('legacy /lln route migrates safely to LLND root', async ({ page, runtimeEvidence: _runtime }) => {
@@ -89,7 +89,7 @@ test.describe('LLND Assess staging smoke', () => {
 
     expect(response?.ok()).toBe(true);
     await expect(page).toHaveURL((url) => url.pathname === '/');
-    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Assess');
+    await expect(page).toHaveTitle('FREE LLN & Digital Assessments for RTOs | LLND Mate');
   });
 
   test('direct nested SPA navigation avoids a server 404', async ({ page, runtimeEvidence: _runtime }) => {

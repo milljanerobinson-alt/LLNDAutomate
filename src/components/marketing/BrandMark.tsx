@@ -7,7 +7,7 @@ interface BrandMarkProps {
   showDescriptor?: boolean;
 }
 
-/** LLND Assess logo lock-up: icon + wordmark. Decorative icon; the name is the accessible label. */
+/** LLND Mate logo lock-up: icon + wordmark. Decorative icon; the name is the accessible label. */
 export function BrandMark({ tone = 'dark', size = 'md', showDescriptor = false }: BrandMarkProps) {
   const box = size === 'sm' ? 'w-8 h-8 rounded-lg' : 'w-9 h-9 rounded-xl';
   const icon = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
@@ -18,7 +18,7 @@ export function BrandMark({ tone = 'dark', size = 'md', showDescriptor = false }
       </span>
       <span className="flex flex-col leading-none text-left">
         <span className={`font-extrabold tracking-tight ${size === 'sm' ? 'text-sm' : 'text-base'} ${tone === 'dark' ? 'text-slate-900' : 'text-white'}`}>
-          LLND <span className={tone === 'dark' ? 'text-primary-600' : 'text-primary-300'}>Assess</span>
+          LLND <span className={tone === 'dark' ? 'text-primary-600' : 'text-primary-300'}>Mate</span>
         </span>
         {showDescriptor && (
           <span className={`text-[11px] font-medium mt-1 hidden sm:block ${tone === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>

@@ -11,9 +11,9 @@ export function ContactPage({ currentHash }: { currentHash: string }) {
       <section className="bg-gradient-to-b from-primary-50/70 to-white px-4 sm:px-6 py-14 sm:py-20">
         <div className="max-w-3xl mx-auto">
           <p className="text-sm font-semibold text-primary-700 mb-3">Contact</p>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">Contact LLND Assess</h1>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">Contact LLND Mate</h1>
           <p className="text-lg text-slate-600 leading-relaxed mb-8">
-            Our contact details are being finalised. In the meantime you can read how LLND Assess works or create a free account.
+            Our contact details are being finalised. In the meantime you can read how LLND Mate works or create a free account.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <a href={SIGNUP_HASH} className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl bg-primary-600 text-white font-bold hover:bg-primary-700 transition-colors">

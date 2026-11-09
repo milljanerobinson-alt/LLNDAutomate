@@ -12,7 +12,7 @@ export function ResourcesPage({ currentHash }: { currentHash: string }) {
           <p className="text-sm font-semibold text-primary-700 mb-3">FAQ</p>
           <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">Frequently asked questions</h1>
           <p className="text-lg text-slate-600 leading-relaxed">
-            Answers about the assessments, the Free allowance and how results are used.
+            Answers about the assessments, the LLND Mate free allowance and how results are used.
           </p>
         </div>
       </section>

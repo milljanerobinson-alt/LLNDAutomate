@@ -299,7 +299,7 @@ test.describe.serial('Issue #40 authenticated staging gate', () => {
 
       await page.goto(generated.properties!.action_link);
       await expect(page).toHaveURL(new RegExp(`${new URL(env.baseUrl).hostname.replace(/\./g, '\\.')}\/accept-invite`));
-      await expect(page.getByRole('heading', { name: 'Set up your LLND Assess account' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Set up your LLND Mate account' })).toBeVisible();
 
       // Email confirmation alone must not activate access before password setup.
       const { data: confirmedMembership } = await service.from('organisation_memberships')

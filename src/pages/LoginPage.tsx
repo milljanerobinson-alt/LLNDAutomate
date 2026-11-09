@@ -211,7 +211,7 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
             <div className="w-11 h-11 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center border border-white/20">
               {isEios ? <ShieldCheck className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
             </div>
-            <span className="text-xl font-semibold">{isEios ? 'EIOS' : 'LLND Assess'}</span>
+            <span className="text-xl font-semibold">{isEios ? 'EIOS' : 'LLND Mate'}</span>
           </button>
         </div>
         <div className="relative z-10 max-w-md">
@@ -220,14 +220,14 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
               ? 'Engineering Intelligence & Oversight System'
               : isEios
                 ? 'Engineering Intelligence Operating System'
-                : 'Adaptive LLN & Digital Assessments for Australian RTOs'}
+                : 'Welcome to LLND Mate'}
           </h1>
           <p className={`text-lg leading-relaxed ${isEios ? 'text-eios-100' : 'text-primary-100'}`}>
             {isEiosOAuth
               ? 'Continue to authorise ChatGPT to access EIOS. Your engineering records, audit trails, and governed inspections remain protected.'
               : isEios
                 ? 'Governed engineering intelligence, ATD, and secure platform integrations for the Engineering Intelligence Operating System.'
-                : 'Assess learner readiness, identify support needs and track progress with LLND Assess.'}
+                : 'FREE LLN & Digital Assessments for Australian RTOs. Smarter, shorter adaptive LLN assessments, practical digital skills checks, and clear learner support insights.'}
           </p>
         </div>
         {isEios ? (
@@ -273,7 +273,7 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
                 ? 'Continue to authorise ChatGPT to access EIOS.'
                 : isEios
                   ? 'Access the Engineering Intelligence Operating System.'
-                  : 'Access the LLND Assess dashboard'}
+                  : 'Access the LLND Mate dashboard'}
           </p>
 
           {error && (
@@ -469,7 +469,7 @@ export function LoginPage({ loginContext = 'eios', oauthRedirect }: { loginConte
           {view === 'auth' && isLlnd && (
             <div className="mt-6 text-center">
               <button onClick={() => { window.location.href = '#/signup'; }} className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-                Don't have an account? Start a free trial
+                Don't have an account? Create a free account
               </button>
             </div>
           )}

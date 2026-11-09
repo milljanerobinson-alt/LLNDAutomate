@@ -25,7 +25,7 @@ const ADMINISTRATION_NAV: NavItem[] = [
   { key: 'compliance', label: 'Compliance', icon: ShieldCheck },
   { key: 'acsf-evidence', label: 'ACSF Evidence', icon: BookOpen },
   { key: 'audit-log', label: 'Audit Log', icon: ScrollText },
-  { key: 'billing', label: 'Billing & Usage', icon: CreditCard },
+  { key: 'billing', label: 'Plan & usage', icon: CreditCard },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -95,7 +95,7 @@ export function CustomerWorkspaceLayout({ workspace, currentPage, onPageChange, 
         <div className="flex items-center justify-between px-5 py-5 border-b border-slate-200">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center"><WorkspaceIcon className="w-5 h-5 text-white" /></div>
-            <div><div className="text-sm font-bold text-slate-900">LLND Assess</div><div className="text-xs text-slate-400">{cfg.label}</div></div>
+            <div><div className="text-sm font-bold text-slate-900">LLND Mate</div><div className="text-xs text-slate-400">{cfg.label}</div></div>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400"><X className="w-5 h-5" /></button>
         </div>

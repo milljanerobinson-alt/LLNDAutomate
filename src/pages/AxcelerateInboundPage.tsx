@@ -322,7 +322,7 @@ export function AxcelerateInboundPage() {
       <div>
         <h2 className="text-xl font-semibold text-slate-900">aXcelerate Inbound Sync</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Sync learners from aXcelerate into LLND Assess based on their custom field settings.
+          Sync learners from aXcelerate into LLND Mate based on their custom field settings.
           Checks <code className="font-mono bg-slate-100 px-1 rounded">lln_quiz_required</code> and{' '}
           <code className="font-mono bg-slate-100 px-1 rounded">digital_quiz_required</code> and
           issues only the assessments required.

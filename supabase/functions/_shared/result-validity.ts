@@ -615,7 +615,7 @@ export function buildInboundNote(params: {
   const tz = params.timezone;
   const active = params.decisions.filter((d) => d.action !== "none");
   const lines = [
-    "LLND Assess — LLND assessment status",
+    "LLND Mate — LLND assessment status",
     `Contact: ${params.contactName}`,
     `Course: ${params.courseName ?? "not identified from the aXcelerate enrolment"}`,
     `Date: ${fmtDate(params.now.toISOString(), tz)}`,
@@ -635,7 +635,7 @@ export function buildInboundNote(params: {
         if (c?.status === "valid") {
           lines.push(`- ${name}: completed ${fmtDate(c.completedAt, tz)}; within the RTO's ${c.validityDays}-day validity period (until ${fmtDate(c.validUntil, tz)}); ${c.sufficiencyDetail}.`);
         } else {
-          lines.push(`- ${name}: assessment completed for this enrolment; the result is recorded in LLND Assess for RTO follow-up.`);
+          lines.push(`- ${name}: assessment completed for this enrolment; the result is recorded in LLND Mate for RTO follow-up.`);
         }
         break;
       case "active":

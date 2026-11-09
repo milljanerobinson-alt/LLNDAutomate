@@ -964,7 +964,7 @@ function ValidationReportView({
 
           <div className="pt-6 border-t border-slate-200 text-center">
             <p className="text-xs text-slate-400">
-              Report generated on {formatDateTime(new Date().toISOString())} · LLND Assess Assessment Validation
+              Report generated on {formatDateTime(new Date().toISOString())} · LLND Mate Assessment Validation
             </p>
           </div>
         </div>

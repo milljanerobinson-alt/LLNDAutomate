@@ -318,7 +318,7 @@ export function ResultsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Results</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Review completed LLND Assess assessments, ACSF outcomes, and course recommendations.
+          Review completed LLND Mate assessments, ACSF outcomes, and course recommendations.
         </p>
       </div>
 

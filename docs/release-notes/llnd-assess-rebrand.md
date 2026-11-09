@@ -1,5 +1,7 @@
 # Release notes: LLND Assess rebrand
 
+> Superseded: the customer-facing name is now **LLND Mate**. See `llnd-mate-rebrand.md`.
+
 Branch: `feature/llnd-assess-rebrand` (based on `feature/clean-staging-migration-safety`,
 which already contains #40, assessment-result validity and P1).
 Not deployed. No database, Supabase, Cloudflare, DNS, authentication or payment change.

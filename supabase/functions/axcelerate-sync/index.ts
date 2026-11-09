@@ -61,17 +61,17 @@ function buildNoteForEvent(
   switch (eventType) {
     case "invitation_sent": {
       return [
-        "▶ LLND Assess ASSESSMENT INVITATION SENT",
+        "▶ LLND Mate ASSESSMENT INVITATION SENT",
         divider,
         `Candidate:      ${name} <${email}>`,
         `Qualification:  ${qualName}`,
         `Invited:        ${fmt(invitation.sent_at)}`,
         `Due Date:       ${invitation.due_date ? fmt(invitation.due_date) : "Not set"}`,
         "",
-        "The candidate has been invited to complete their LLND Assess assessment.",
+        "The candidate has been invited to complete their LLND Mate assessment.",
         `Portal Link: ${portalUrl}`,
         divider,
-        "Source: LLND Assess",
+        "Source: LLND Mate",
       ].join("\n");
     }
 
@@ -84,7 +84,7 @@ function buildNoteForEvent(
         requirements_not_confirmed: "REQUIREMENTS NOT CONFIRMED — RTO review required",
       };
       const lines = [
-        "✅ LLND Assess ASSESSMENT COMPLETED",
+        "✅ LLND Mate ASSESSMENT COMPLETED",
         divider,
         `Candidate:      ${name} <${email}>`,
         `Qualification:  ${qualName}`,
@@ -115,7 +115,7 @@ function buildNoteForEvent(
         }
       }
       lines.push("", `Portal: ${portalUrl}`);
-      lines.push(divider, "Source: LLND Assess");
+      lines.push(divider, "Source: LLND Mate");
       return lines.join("\n");
     }
 
@@ -124,7 +124,7 @@ function buildNoteForEvent(
       const strategies: string[] = planContent?.strategies || planContent?.support_strategies || [];
       const summary: string = planContent?.summary || planContent?.overview || "";
       const lines = [
-        "📋 LLND Assess SUPPORT PLAN GENERATED",
+        "📋 LLND Mate SUPPORT PLAN GENERATED",
         divider,
         `Candidate:      ${name} <${email}>`,
         `Qualification:  ${qualName}`,
@@ -140,20 +140,20 @@ function buildNoteForEvent(
           lines.push(`${i + 1}. ${typeof s === "string" ? s : JSON.stringify(s)}`);
         });
         if (strategies.length > 5) {
-          lines.push(`  ... and ${strategies.length - 5} more (see LLND Assess)`);
+          lines.push(`  ... and ${strategies.length - 5} more (see LLND Mate)`);
         }
       }
       const rec = invitation.course_recommendation || "N/A";
       lines.push("", `Readiness: ${rec.replace(/_/g, " ").toUpperCase()}`);
       lines.push("", `Full plan: ${portalUrl}`);
-      lines.push(divider, "Source: LLND Assess");
+      lines.push(divider, "Source: LLND Mate");
       return lines.join("\n");
     }
 
     case "intervention_required": {
       const triggerReason: string = (extraData.trigger_reason as string) || "Not specified";
       const lines = [
-        "🚨 LLND Assess INTERVENTION FLAGGED",
+        "🚨 LLND Mate INTERVENTION FLAGGED",
         divider,
         `Candidate:      ${name} <${email}>`,
         `Qualification:  ${qualName}`,
@@ -162,18 +162,18 @@ function buildNoteForEvent(
         "REASON FOR INTERVENTION",
         triggerReason,
         "",
-        "The candidate has been flagged for intervention based on their LLND Assess assessment results.",
+        "The candidate has been flagged for intervention based on their LLND Mate assessment results.",
         "Please review their support needs and contact them to arrange appropriate assistance.",
         "",
         `Results: ${portalUrl}`,
         divider,
-        "Source: LLND Assess",
+        "Source: LLND Mate",
       ];
       return lines.join("\n");
     }
 
     default:
-      return `LLND Assess Event: ${eventType}\nCandidate: ${name}\nTimestamp: ${fmt(new Date().toISOString())}`;
+      return `LLND Mate Event: ${eventType}\nCandidate: ${name}\nTimestamp: ${fmt(new Date().toISOString())}`;
   }
 }
 

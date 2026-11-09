@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
     const settings: Record<string, any> = {};
     settingsData?.forEach((s) => { settings[s.key] = s.value; });
 
-    const orgName = organisationProfile.branding.name || "LLND Assess";
+    const orgName = organisationProfile.branding.name || "LLND Mate";
     const notifSettings = organisationProfile.notificationSettings;
 
     if (notifSettings[type] === false) {
@@ -123,7 +123,7 @@ Deno.serve(async (req: Request) => {
 
     switch (type) {
       case "sent":
-        subject = `${orgName}: Your LLND Assess assessment Invitation`;
+        subject = `${orgName}: Your LLND Mate assessment Invitation`;
         let linksHtml = "";
         if (quiz_links) {
           for (const [title, link] of Object.entries(quiz_links)) {
@@ -131,10 +131,10 @@ Deno.serve(async (req: Request) => {
           }
         }
         htmlBody = buildEmailHtml(
-          "You've been invited to complete your LLND Assess assessments",
+          "You've been invited to complete your LLND Mate assessments",
           "Language, Literacy, Numeracy & Digital Skills Assessment",
           `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${recipient_name},</p>
-           <p style="color:#475569;font-size:15px;line-height:1.6;">You have been invited to complete your LLND Assess (Language, Literacy, Numeracy &amp; Digital) assessments. You can complete these at your own pace using the links below.</p>
+           <p style="color:#475569;font-size:15px;line-height:1.6;">You have been invited to complete your LLND Mate (Language, Literacy, Numeracy &amp; Digital) assessments. You can complete these at your own pace using the links below.</p>
            ${linksHtml}
            ${due_date ? `<p style="color:#475569;font-size:14px;margin-top:20px;">Please complete all assessments by: <strong>${due_date}</strong></p>` : ""}
            <p style="color:#475569;font-size:14px;margin-top:20px;">If you have any questions, please contact your trainer.</p>`
@@ -142,7 +142,7 @@ Deno.serve(async (req: Request) => {
         break;
 
       case "reminder":
-        subject = `Reminder: Complete Your LLND Assess assessment — ${orgName}`;
+        subject = `Reminder: Complete Your LLND Mate assessment — ${orgName}`;
         let reminderLinksHtml = "";
         if (quiz_links) {
           for (const [title, link] of Object.entries(quiz_links)) {
@@ -151,9 +151,9 @@ Deno.serve(async (req: Request) => {
         }
         htmlBody = buildEmailHtml(
           "Friendly Reminder: Assessment Pending",
-          "You have an incomplete LLND Assess assessment",
+          "You have an incomplete LLND Mate assessment",
           `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${recipient_name},</p>
-           <p style="color:#475569;font-size:15px;line-height:1.6;">This is a friendly reminder that you have pending LLND Assess assessments to complete. Use the links below to continue where you left off.</p>
+           <p style="color:#475569;font-size:15px;line-height:1.6;">This is a friendly reminder that you have pending LLND Mate assessments to complete. Use the links below to continue where you left off.</p>
            ${reminderLinksHtml}
            <p style="color:#475569;font-size:14px;margin-top:20px;">If you have already completed these assessments, please disregard this message.</p>`
         );
@@ -163,9 +163,9 @@ Deno.serve(async (req: Request) => {
         subject = `Assessment Submitted — ${orgName}`;
         htmlBody = buildEmailHtml(
           "Assessment Submitted Successfully",
-          "Your LLND Assess assessments have been submitted",
+          "Your LLND Mate assessments have been submitted",
           `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${recipient_name},</p>
-           <p style="color:#475569;font-size:15px;line-height:1.6;">Your LLND Assess assessments have been completed and submitted for review. Your trainer will review your results and be in touch with next steps.</p>`
+           <p style="color:#475569;font-size:15px;line-height:1.6;">Your LLND Mate assessments have been completed and submitted for review. Your trainer will review your results and be in touch with next steps.</p>`
         );
         break;
 
@@ -173,9 +173,9 @@ Deno.serve(async (req: Request) => {
         subject = `Action Required: Overdue Assessment — ${orgName}`;
         htmlBody = buildEmailHtml(
           "Your Assessment is Overdue",
-          "Please complete your LLND Assess assessment as soon as possible",
+          "Please complete your LLND Mate assessment as soon as possible",
           `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${recipient_name},</p>
-           <p style="color:#475569;font-size:15px;line-height:1.6;">Your LLND Assess assessments are now overdue. Please complete them as soon as possible by contacting your trainer to arrange access.</p>`
+           <p style="color:#475569;font-size:15px;line-height:1.6;">Your LLND Mate assessments are now overdue. Please complete them as soon as possible by contacting your trainer to arrange access.</p>`
         );
         break;
 
@@ -185,7 +185,7 @@ Deno.serve(async (req: Request) => {
           "Assessment Update",
           "",
           `<p style="color:#475569;font-size:15px;line-height:1.6;">Hi ${recipient_name},</p>
-           <p style="color:#475569;font-size:15px;line-height:1.6;">There is an update regarding your LLND Assess assessment. Please log in to the portal for details.</p>`
+           <p style="color:#475569;font-size:15px;line-height:1.6;">There is an update regarding your LLND Mate assessment. Please log in to the portal for details.</p>`
         );
     }
 

@@ -37,8 +37,8 @@ export function FeaturesPage({ currentHash }: { currentHash: string }) {
       <section className="bg-gradient-to-b from-primary-50/70 to-white px-4 sm:px-6 py-14 sm:py-20">
         <div className="max-w-3xl mx-auto text-center">
           <p className="text-sm font-semibold text-primary-700 mb-3">Features</p>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">What’s included in LLND Assess</h1>
-          <p className="text-lg text-slate-600 leading-relaxed">Everything listed here is available on the Free plan.</p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">What’s included in LLND Mate</h1>
+          <p className="text-lg text-slate-600 leading-relaxed">Everything listed here is available on LLND Mate, the free plan.</p>
         </div>
       </section>
       {GROUPS.map((g) => (
@@ -59,8 +59,8 @@ export function FeaturesPage({ currentHash }: { currentHash: string }) {
       ))}
       <section className="bg-slate-50 px-4 sm:px-6 py-14">
         <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-2xl font-extrabold text-slate-900 mb-3">Coming with paid plans</h2>
-          <p className="text-slate-600 mb-6">Premium integration automation is planned for the Automate plan. It is not available yet.</p>
+          <h2 className="text-2xl font-extrabold text-slate-900 mb-3">Coming with LLND Mate Plus and LLND Automate</h2>
+          <p className="text-slate-600 mb-6">Premium integration automation is planned for LLND Automate. It is not available yet.</p>
           <a href={SIGNUP_HASH} className="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-primary-600 text-white font-bold hover:bg-primary-700 transition-colors">
             {PRIMARY_CTA} <ArrowRight className="w-5 h-5" aria-hidden="true" />
           </a>

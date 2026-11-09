@@ -45,7 +45,10 @@ import { EmailActivityPage } from './pages/EmailActivityPage';
 import { AxcelerateLogPage } from './pages/AxcelerateLogPage';
 import { AxcelerateInboundPage } from './pages/AxcelerateInboundPage';
 import { ValidationPage } from './pages/ValidationPage';
-import { BillingPage } from './pages/BillingPage';
+import { PlanStatusPage } from './pages/PlanStatusPage';
+// Legacy BillingPage (src/pages/BillingPage.tsx) is kept in the repository but no
+// longer routed: it showed retired plans, prices and a trial from subscription_plans.
+// See docs/release-notes/llnd-mate-rebrand.md (billing discrepancy).
 
 // Trainer + Platform workspace dashboards
 import { CandidateSupportPage } from './pages/workspace/CandidateSupportPage';
@@ -119,7 +122,7 @@ function Router() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  // Browser tab title (LLND Assess website and product, or EIOS).
+  // Browser tab title (LLND Mate website and product, or EIOS).
   useEffect(() => {
     document.title = product === 'llnd' ? llndDocumentTitle(parseHash(hash).kind) : 'EIOS';
   }, [product, hash]);
@@ -174,12 +177,12 @@ function Router() {
   }
 
   // ─── LLND root route ─────────────────────────────────────────────────────────
-  // The domain root is the public LLND Assess website.
+  // The domain root is the public LLND Mate website.
   if (route.kind === 'root' && product === 'llnd') {
     return <HomePage currentHash={hash} />;
   }
 
-  // ─── LLND Assess public website (formerly LLND Automate) ────────────────────
+  // ─── LLND Mate public website (formerly LLND Automate) ────────────────────
   if (product === 'llnd' && (route.kind === 'home' || route.kind === 'about' || route.kind === 'features' ||
       route.kind === 'how-it-works' || route.kind === 'resources' || route.kind === 'contact' ||
       route.kind === 'pricing' || route.kind === 'signup')) {
@@ -454,7 +457,7 @@ function renderAdministrationPage(page: string) {
     case 'axcelerate-log':    return <AxcelerateLogPage />;
     case 'axcelerate-inbound': return <AxcelerateInboundPage />;
     case 'validation':       return <ValidationPage />;
-    case 'billing':           return <BillingPage />;
+    case 'billing':           return <PlanStatusPage />;
     case 'settings':          return <OrganisationPage />;
     default:                  return <DashboardPage />;
   }

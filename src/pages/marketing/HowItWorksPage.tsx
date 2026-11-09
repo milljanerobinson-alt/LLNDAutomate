@@ -6,7 +6,7 @@ const STEPS = [
   {
     icon: Building2,
     title: 'Create your free RTO account',
-    body: 'Register your organisation online. The Free plan includes 10 completed assessments each month and needs no credit card.',
+    body: 'Register your organisation online. LLND Mate is free and includes 10 completed assessment assignments each month and needs no credit card.',
     points: ['Self-service registration', 'Invite your staff by email', 'Separate Administration, Candidate Support and Technical workspaces'],
   },
   {
@@ -52,7 +52,7 @@ export function HowItWorksPage({ currentHash }: { currentHash: string }) {
       <section className="bg-gradient-to-b from-primary-50/70 to-white px-4 sm:px-6 py-14 sm:py-20">
         <div className="max-w-3xl mx-auto text-center">
           <p className="text-sm font-semibold text-primary-700 mb-3">How it works</p>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">How LLND Assess works</h1>
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-5">How LLND Mate works</h1>
           <p className="text-lg text-slate-600 leading-relaxed">
             From creating your account to supporting learners who need extra help, in six steps.
           </p>

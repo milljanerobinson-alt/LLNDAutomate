@@ -1,6 +1,6 @@
 // aXcelerate enrolment policy for LLND write-backs.
 //
-// LLND Assess never creates or changes an aXcelerate enrolment because an
+// LLND Mate never creates or changes an aXcelerate enrolment because an
 // assessment invitation or completion happened. The former behaviour —
 // search the course's instances and enrol the learner in the first one
 // returned — has been removed: it could create duplicate or wrong
@@ -30,7 +30,7 @@ export function enrolmentDecision(input: {
   const exact = input.axcelerateEnrolmentId !== null && input.axcelerateEnrolmentId !== undefined && String(input.axcelerateEnrolmentId) !== "";
   const reason = exact
     ? "enrolment progression is not enabled; the existing aXcelerate enrolment was not changed"
-    : "no exact aXcelerate enrolment is linked; LLND Assess does not create or choose an enrolment";
+    : "no exact aXcelerate enrolment is linked; LLND Mate does not create or choose an enrolment";
   return {
     action: "none",
     reason,
