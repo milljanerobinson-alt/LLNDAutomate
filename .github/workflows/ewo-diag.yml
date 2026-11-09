@@ -1,0 +1,83 @@
+# Temporary verification for feature/llnd-mate-rebrand (throwaway ewo/diag-* branch; never merged).
+# Local build and local preview only. No hosted Supabase, Cloudflare or deployment is touched.
+name: EWO LLND Mate Verification
+on:
+  push:
+    branches: ['ewo/**']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VITE_SUPABASE_URL: http://127.0.0.1:54321
+      VITE_SUPABASE_ANON_KEY: local-preview-placeholder-key
+      BASE_REF: feature/llnd-assess-rebrand
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install (head and base)
+        run: |
+          npm ci --no-audit --no-fund > /tmp/npm.log 2>&1 || (tail -20 /tmp/npm.log; exit 1)
+          git worktree add /tmp/base origin/$BASE_REF -q
+          (cd /tmp/base && npm ci --no-audit --no-fund > /tmp/npm-base.log 2>&1)
+      - name: Focused Vitest suites (real runner)
+        shell: bash
+        run: |
+          set +e
+          npx vitest run src/tests/llnd_mate_rebrand.test.ts src/tests/llnd_independence_brand_foundation.test.ts src/tests/issue040_rto_workspace_access.test.ts src/tests/assessment_result_validity.test.ts src/tests/p1_integration_safety.test.ts src/tests/clean_install_migration_safety.test.ts src/tests/ewo033_security_regression.test.ts --reporter=json --outputFile=/tmp/focused.json > /tmp/focused.log 2>&1
+          node -e 'const r=require("/tmp/focused.json");const f=r.testResults.map(t=>t.name.split("/").pop()+": "+t.assertionResults.filter(a=>a.status==="passed").length+"/"+t.assertionResults.length);const fails=r.testResults.flatMap(t=>t.assertionResults.filter(a=>a.status==="failed").map(a=>a.fullName+" :: "+(a.failureMessages||[]).join(" ").replace(/\s+/g," ").slice(0,250)));console.log("::notice title=FOCUSED::"+["passed="+r.numPassedTests+" failed="+r.numFailedTests,...f,...fails.slice(0,12)].join("%0A"))'
+      - name: Full Vitest suite, head vs base
+        shell: bash
+        run: |
+          set +e
+          npx vitest run --reporter=json --outputFile=/tmp/head.json > /tmp/head.log 2>&1
+          (cd /tmp/base && npx vitest run --reporter=json --outputFile=/tmp/base.json > /tmp/base.log 2>&1)
+          node -e '
+            const h=require("/tmp/head.json"), b=require("/tmp/base.json");
+            const failed=r=>new Set(r.testResults.flatMap(t=>t.assertionResults.filter(a=>a.status==="failed").map(a=>t.name.replace(/.*\/src\//,"src/")+" > "+a.fullName)));
+            const fh=failed(h), fb=failed(b);
+            const newF=[...fh].filter(x=>!fb.has(x)), fixed=[...fb].filter(x=>!fh.has(x));
+            const s="head: "+h.numPassedTests+" passed / "+h.numFailedTests+" failed / "+h.numPendingTests+" skipped%0Abase: "+b.numPassedTests+" passed / "+b.numFailedTests+" failed / "+b.numPendingTests+" skipped%0Anew failures vs base: "+newF.length+"%0Afixed vs base: "+fixed.length+"%0A"+newF.slice(0,15).map(x=>"NEW "+x.slice(0,220)).join("%0A")+"%0A"+fixed.slice(0,8).map(x=>"FIXED "+x.slice(0,200)).join("%0A");
+            console.log("::notice title=FULL_SUITE::"+s);'
+      - name: TypeScript, head vs base
+        shell: bash
+        run: |
+          set +e
+          npx tsc -p tsconfig.app.json --noEmit > /tmp/tsc-head.txt 2>&1; h=$(grep -c "error TS" /tmp/tsc-head.txt)
+          (cd /tmp/base && npx tsc -p tsconfig.app.json --noEmit > /tmp/tsc-base.txt 2>&1); b=$(grep -c "error TS" /tmp/tsc-base.txt)
+          changed=$(git diff --name-only origin/$BASE_REF...HEAD | grep -E '^src/.*\.tsx?$' | grep -v '^src/tests/' | tr '\n' '|' | sed 's/|$//')
+          inchanged=$(grep "error TS" /tmp/tsc-head.txt | grep -E "^($changed)" | head -10 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-2500)
+          echo "::notice title=TSC::head=$h base=$b%0Aerrors in changed files:%0A${inchanged:-none}"
+      - name: Build
+        run: |
+          npm run build > /tmp/build.log 2>&1; rc=$?
+          echo "::notice title=BUILD::rc=$rc $(grep -E 'built in|error' /tmp/build.log | tail -3 | tr '\n' ' ' | cut -c1-500)"
+          exit $rc
+      - name: Browser checks on a local preview (desktop + mobile)
+        shell: bash
+        run: |
+          set +e
+          npx playwright install --with-deps chromium > /tmp/pw-install.log 2>&1
+          npx vite preview --host 127.0.0.1 --port 4173 --strictPort > /tmp/preview.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done
+          mkdir -p test-results/screenshots
+          BASE_URL=http://127.0.0.1:4173 npx playwright test --project=desktop-chromium --project=mobile-chromium --reporter=json > /tmp/pw.json 2> /tmp/pw.err
+          node -e '
+            const r=require("/tmp/pw.json"); const out=[];
+            const walk=(s,p)=>{for(const x of s.suites||[])walk(x,p);for(const sp of s.specs||[])for(const t of sp.tests){const res=t.results[t.results.length-1]||{};out.push((res.status||"?")+" ["+t.projectName+"] "+sp.title+(res.status!=="passed"&&res.error?" :: "+String(res.error.message).replace(/\u001b\[[0-9;]*m/g,"").replace(/\s+/g," ").slice(0,300):""));}};
+            for(const s of r.suites)walk(s);
+            const st=r.stats||{}; console.log("::notice title=PLAYWRIGHT::expected="+st.expected+" unexpected="+st.unexpected+" skipped="+st.skipped+"%0A"+out.filter(l=>!l.startsWith("passed")).slice(0,20).join("%0A")+"%0A(passed: "+out.filter(l=>l.startsWith("passed")).length+")");'
+          ls test-results/screenshots | head -40
+      - name: Publish screenshots to a throwaway branch
+        if: always()
+        run: |
+          set -e
+          mkdir -p /tmp/shots && cp -r test-results/screenshots/* /tmp/shots/ 2>/dev/null || true
+          cd /tmp/shots && git init -q && git checkout -q -b ewo/diag-mate-screens
+          git -c user.name="ci" -c user.email="ci@example.invalid" add -A && git -c user.name="ci" -c user.email="ci@example.invalid" commit -q -m "screenshots (throwaway)" || exit 0
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ewo/diag-mate-screens
+          echo "::notice title=SCREENS::$(ls | wc -l) files pushed"
