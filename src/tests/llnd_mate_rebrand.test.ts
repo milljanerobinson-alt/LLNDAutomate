@@ -246,11 +246,13 @@ describe('LLND Mate: plans and billing rules', () => {
     expect(signup).toContain('{TIER_FREE} free plan');
   });
 
-  it('signed-in Plan & usage page is display only and shows no legacy plans', () => {
+  it('signed-in Plan & usage page reads only the server usage model and shows no legacy plans', () => {
     const page = read('src/pages/PlanStatusPage.tsx');
     expect(stripComments(page)).not.toMatch(/supabase|from\(|insert|update\(|stripe|subscription_plans/i);
     expect(stripComments(page)).not.toMatch(/\$79|\$129|trial|lln_only|digital_only|lln_digital/i);
-    expect(page).toContain('Online plan management and usage counts are not available yet.');
+    // Live since the P0 metering task: figures come only from get_my_plan_usage.
+    expect(page).toContain('fetchPlanUsage');
+    expect(read('src/lib/planUsage.ts')).toContain("supabase.rpc('get_my_plan_usage')");
     const app = read('src/App.tsx');
     expect(app).toContain("case 'billing':           return <PlanStatusPage />;");
     expect(app).not.toMatch(/<BillingPage\s*\/>/);

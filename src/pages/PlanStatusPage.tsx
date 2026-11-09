@@ -1,72 +1,235 @@
-import { CheckCircle2, Clock, Info } from 'lucide-react';
-import { BILLING_RULES, PLANS, TIER_AUTOMATE, TIER_FREE, TIER_PLUS } from '../lib/brand';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock, Info, Loader2, Lock, RefreshCw, XCircle } from 'lucide-react';
+import { BILLING_RULES, PLANS, TIER_PLUS } from '../lib/brand';
+import { fetchPlanUsage, formatResetDate, type PlanUsageState } from '../lib/planUsage';
 
-// Signed-in "Plan & usage" page for RTO staff.
+// Signed-in "Plan & usage" page for RTO administrators.
 //
-// Display only. It replaces the legacy BillingPage, which read retired plans
-// (lln_only / digital_only / lln_digital, $79 / $129, 14-day trial) from
-// subscription_plans and let staff create or change subscription rows from the
-// browser. This page reads and writes nothing, so it cannot change billing
-// records, and it deliberately does not state which plan an organisation is on
-// or how many completions it has used: usage metering and the LLND Mate
-// monthly allowance are not implemented yet, and stating either would
-// misrepresent what the product actually enforces.
-export function PlanStatusPage() {
+// Every figure comes from the server (get_my_plan_usage). The page never
+// computes usage, never shows a figure it could not confirm, and never treats an
+// unknown entitlement as an active free plan. It reads only; nothing here can
+// change a plan, an entitlement or a billing record. Paid tiers are shown as
+// coming soon with no purchase or upgrade action.
+
+function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Plan &amp; usage</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          The LLND Mate product family and how completed assessments will be counted.
-        </p>
+        <p className="text-sm text-slate-500 mt-1">Your LLND Mate plan and completed assessments this month.</p>
       </div>
+      {children}
+    </div>
+  );
+}
 
-      <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 flex gap-3" role="status">
-        <Info className="w-5 h-5 text-primary-700 flex-shrink-0 mt-0.5" aria-hidden="true" />
-        <div className="text-sm text-primary-900 leading-relaxed">
-          <p className="font-semibold">Online plan management and usage counts are not available yet.</p>
-          <p className="mt-1">
-            Nothing on this page changes your organisation&rsquo;s access. {TIER_PLUS} and {TIER_AUTOMATE} are
-            coming soon and cannot be purchased yet.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {PLANS.map((plan) => {
-          const available = plan.availability === 'available';
-          return (
-            <div key={plan.id} className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="font-bold text-slate-900">{plan.name}</h2>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${available ? 'bg-success-50 text-success-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {available ? 'Free' : 'Coming soon'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">{plan.summary}</p>
-              <p className="text-xl font-extrabold text-slate-900 mt-3">{plan.monthlyFee}</p>
-              <p className="text-sm text-slate-600 mt-1">{plan.included}</p>
-              <p className="text-sm text-slate-600 mt-1">Additional completions: {plan.additional}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-bold text-slate-900 mb-3">How completed assessments are counted</h2>
-        <ul className="space-y-2">
-          {BILLING_RULES.map((rule) => (
-            <li key={rule} className="flex gap-2.5 text-sm text-slate-700 leading-relaxed">
-              <CheckCircle2 className="w-4 h-4 text-success-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
-              {rule}
-            </li>
-          ))}
-        </ul>
-        <p className="flex gap-2 text-xs text-slate-500 mt-4">
-          <Clock className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-          The {TIER_FREE} monthly allowance is not yet counted or enforced in the product.
-        </p>
+function Notice({ tone, icon: Icon, title, children }: {
+  tone: 'info' | 'warn' | 'stop' | 'error'; icon: typeof Info; title: string; children?: React.ReactNode;
+}) {
+  const styles = {
+    info: 'border-primary-200 bg-primary-50 text-primary-900',
+    warn: 'border-amber-200 bg-amber-50 text-amber-900',
+    stop: 'border-error-200 bg-error-50 text-error-900',
+    error: 'border-slate-200 bg-slate-50 text-slate-800',
+  }[tone];
+  return (
+    <div className={`rounded-xl border p-4 flex gap-3 ${styles}`} role={tone === 'stop' || tone === 'error' ? 'alert' : 'status'}>
+      <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" aria-hidden="true" />
+      <div className="text-sm leading-relaxed">
+        <p className="font-semibold">{title}</p>
+        {children && <div className="mt-1 space-y-1">{children}</div>}
       </div>
     </div>
   );
+}
+
+function RetryButton({ onRetry }: { onRetry?: () => void }) {
+  if (!onRetry) return null;
+  return (
+    <button type="button" onClick={onRetry} className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-700 hover:text-primary-800 mt-2">
+      <RefreshCw className="w-4 h-4" aria-hidden="true" /> Try again
+    </button>
+  );
+}
+
+function ComingSoon() {
+  const plus = PLANS.find((p) => p.id === 'plus');
+  const automate = PLANS.find((p) => p.id === 'automate');
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <p className="text-sm text-slate-700">
+        <span className="font-semibold">Need more assessments? {TIER_PLUS} is coming soon.</span>{' '}
+        {plus && automate && (
+          <span className="text-slate-500">
+            {plus.name} ({plus.monthlyFee}, {plus.included}) and {automate.name} ({automate.monthlyFee}) are not yet available to purchase.
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function Rules() {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <h2 className="font-bold text-slate-900 mb-3">How completed assessments are counted</h2>
+      <ul className="space-y-2">
+        {BILLING_RULES.slice(0, 4).map((rule) => (
+          <li key={rule} className="flex gap-2.5 text-sm text-slate-700 leading-relaxed">
+            <CheckCircle2 className="w-4 h-4 text-success-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            {rule}
+          </li>
+        ))}
+        <li className="flex gap-2.5 text-sm text-slate-700 leading-relaxed">
+          <CheckCircle2 className="w-4 h-4 text-success-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+          The allowance resets at midnight AEST (UTC+10) on the first day of each month.
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+export function PlanUsageView({ state, onRetry }: { state: PlanUsageState; onRetry?: () => void }) {
+  if (state.kind === 'loading') {
+    return (
+      <Shell>
+        <div className="rounded-xl border border-slate-200 bg-white p-8 flex items-center gap-3 text-slate-500" role="status" aria-live="polite">
+          <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> Loading your plan and usage…
+        </div>
+      </Shell>
+    );
+  }
+  if (state.kind === 'unauthorised') {
+    return (
+      <Shell>
+        <Notice tone="error" icon={Lock} title="You don’t have access to plan and usage details.">
+          <p>Only administrators of your RTO can see this page. Ask an administrator if you need these details.</p>
+        </Notice>
+      </Shell>
+    );
+  }
+  if (state.kind === 'error') {
+    return (
+      <Shell>
+        <Notice tone="error" icon={XCircle} title="We couldn’t load your plan and usage right now.">
+          <p>No figures are shown because they could not be confirmed. Check your connection and try again.</p>
+          <RetryButton onRetry={onRetry} />
+        </Notice>
+        <Rules />
+      </Shell>
+    );
+  }
+  if (state.kind === 'no_entitlement') {
+    return (
+      <Shell>
+        <Notice tone="stop" icon={AlertTriangle} title="Your organisation’s plan could not be confirmed.">
+          <p>New assessments can’t be started until this is fixed. Learners who have already started can still finish.</p>
+          <p>Please contact LLND Mate support.</p>
+        </Notice>
+        <Rules />
+      </Shell>
+    );
+  }
+  if (state.kind === 'inconsistent') {
+    return (
+      <Shell>
+        <Notice tone="error" icon={AlertTriangle} title="Your usage figures need checking.">
+          <p>We found a mismatch in your usage records, so we aren’t showing figures that might be wrong. Your assessments and results are not affected.</p>
+          <p>Please contact LLND Mate support.</p>
+          <RetryButton onRetry={onRetry} />
+        </Notice>
+        <Rules />
+      </Shell>
+    );
+  }
+
+  const { completed, allowance, remaining, inProgress, resetDate, level } = state;
+  const reset = formatResetDate(resetDate);
+  const pct = Math.min(100, Math.round((completed / allowance) * 100));
+  const bar = level === 'exhausted' ? 'bg-error-500' : level === 'near' ? 'bg-amber-500' : 'bg-primary-600';
+
+  return (
+    <Shell>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current plan</p>
+          <p className="text-xl font-extrabold text-slate-900 mt-2">{state.planName}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{state.tierLabel}</span>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-success-50 text-success-700">
+              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> Active
+            </span>
+          </div>
+          <p className="text-sm text-slate-600 mt-3">{allowance} completed assessments each month</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 md:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">This month</p>
+          <p className="text-2xl font-extrabold text-slate-900 mt-2" data-testid="usage-used">
+            {completed} of {allowance} assessments used
+          </p>
+          <div className="mt-3 h-3 rounded-full bg-slate-100 overflow-hidden" role="progressbar"
+            aria-label="Completed assessments this month" aria-valuemin={0} aria-valuemax={allowance} aria-valuenow={Math.min(completed, allowance)}>
+            <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex flex-wrap justify-between gap-2 mt-3 text-sm">
+            <span className="font-semibold text-slate-800" data-testid="usage-remaining">
+              {remaining} {remaining === 1 ? 'assessment' : 'assessments'} remaining
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-slate-600" data-testid="usage-reset">
+              <Clock className="w-4 h-4" aria-hidden="true" /> Resets {reset}
+            </span>
+          </div>
+          {completed > allowance && (
+            <p className="text-xs text-slate-500 mt-2">
+              {completed} assessments were completed this month. Learners who had already started were able to finish after the allowance was reached.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {level === 'empty' && (
+        <Notice tone="info" icon={Info} title="No completed assessments yet this month.">
+          <p>Usage is counted when a learner completes an assessment assignment, not when you send an invitation.</p>
+        </Notice>
+      )}
+      {level === 'near' && (
+        <Notice tone="warn" icon={AlertTriangle} title="Your free allowance is nearly used.">
+          <p>
+            {remaining} {remaining === 1 ? 'assessment' : 'assessments'} left this month. When all {allowance} are used, new assessments
+            can’t be started until {reset}.
+          </p>
+        </Notice>
+      )}
+      {level === 'exhausted' && (
+        <Notice tone="stop" icon={XCircle} title={`You’ve used all ${allowance} free assessments for this month.`}>
+          <p>No new assessments can be started until {reset}. Learners who have already started can still finish.</p>
+          <p>You can still send invitations, but invited learners won’t be able to start until the allowance resets.</p>
+        </Notice>
+      )}
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700 leading-relaxed">
+        <p>
+          <span className="font-semibold">{inProgress}</span> {inProgress === 1 ? 'learner has' : 'learners have'} started but not finished.
+          They don’t count until they complete, and they can always finish.
+        </p>
+        <p className="text-slate-500 mt-1">
+          Sending an invitation doesn’t reserve an assessment. A learner can start only while your monthly allowance has room.
+        </p>
+      </div>
+
+      <ComingSoon />
+      <Rules />
+    </Shell>
+  );
+}
+
+export function PlanStatusPage() {
+  const [state, setState] = useState<PlanUsageState>({ kind: 'loading' });
+  const load = useCallback(async () => {
+    setState({ kind: 'loading' });
+    setState(await fetchPlanUsage());
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  return <PlanUsageView state={state} onRetry={load} />;
 }

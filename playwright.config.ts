@@ -24,12 +24,12 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-chromium',
-      testMatch: /(product-boundary\.smoke|llnd-mate\.website)\.spec\.ts/,
+      testMatch: /(product-boundary\.smoke|llnd-mate\.website|plan-usage\.states)\.spec\.ts/,
       use: { viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile-chromium',
-      testMatch: /(product-boundary\.smoke|llnd-mate\.website)\.spec\.ts/,
+      testMatch: /(product-boundary\.smoke|llnd-mate\.website|plan-usage\.states)\.spec\.ts/,
       use: {
         viewport: { width: 390, height: 844 },
         isMobile: true,

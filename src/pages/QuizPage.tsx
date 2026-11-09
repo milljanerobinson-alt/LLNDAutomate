@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { createQuizClient } from '../lib/supabase';
 import { logAuditAnon } from '../lib/audit';
+import { AssessmentStartUnavailable } from '../components/AssessmentStartUnavailable';
+import { isAssessmentStartUnavailable } from '../lib/planUsage';
 import type {
   AssessmentInvitation, InvitationAssessment, Assessment,
   Domain,
@@ -47,6 +49,7 @@ export function QuizPage({ token }: { token: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [completedAssessmentIds, setCompletedAssessmentIds] = useState<Set<string>>(new Set());
   const [showResults, setShowResults] = useState(false);
+  const [startUnavailable, setStartUnavailable] = useState(false);
 
   const quizClient = createQuizClient(token);
 
@@ -193,10 +196,16 @@ export function QuizPage({ token }: { token: string }) {
 
     const invAss = invAssessments.find((a) => a.assessment_id === assessmentId);
     if (invAss && invAss.individual_status === 'pending') {
-      await quizClient
+      const { error: startError } = await quizClient
         .from('invitation_assessments')
         .update({ individual_status: 'in_progress' })
         .eq('id', invAss.id);
+      // The server refuses new starts when the RTO cannot start more assessments this month.
+      if (isAssessmentStartUnavailable(startError)) {
+        setActiveAssessmentId(null);
+        setStartUnavailable(true);
+        return;
+      }
 
       // Queue aXcelerate contact note when quiz is first started
       const assessmentType = (invAss as any).assessment?.type;
@@ -219,10 +228,15 @@ export function QuizPage({ token }: { token: string }) {
     }
 
     if (invitation && invitation.status === 'opened') {
-      await quizClient
+      const { error: statusError } = await quizClient
         .from('assessment_invitations')
         .update({ status: 'in_progress', started_at: new Date().toISOString() })
         .eq('id', invitation.id);
+      if (isAssessmentStartUnavailable(statusError)) {
+        setActiveAssessmentId(null);
+        setStartUnavailable(true);
+        return;
+      }
     }
   }, [invitation, invAssessments, token]);
 
@@ -396,6 +410,8 @@ export function QuizPage({ token }: { token: string }) {
       </div>
     );
   }
+
+  if (startUnavailable) return <AssessmentStartUnavailable />;
 
   if (activeAssessmentId && !showResults) {
     const q = questions[currentQ];

@@ -12,6 +12,7 @@ import type {
 } from '../lib/types';
 import { STATUS_COLORS, STUDENT_STATUS_CONFIG, RECOMMENDATION_LABELS, RECOMMENDATION_COLORS } from '../lib/types';
 import { logAudit, enqueueAxcelerateWriteback } from '../lib/audit';
+import { UsageAllowanceNotice } from '../components/UsageAllowanceNotice';
 
 type StudentTab = 'in_progress' | 'completed';
 
@@ -717,6 +718,8 @@ export function CandidatesPage() {
           <Plus className="w-4 h-4" /> New Invitation
         </button>
       </div>
+
+      <UsageAllowanceNotice />
 
       {error && (
         <div className="card p-4 border-rose-200 bg-rose-50">

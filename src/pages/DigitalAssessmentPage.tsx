@@ -10,6 +10,8 @@ import {
   DIGITAL_DOMAIN_LABELS, type DigitalDomain, type DigitalQuestion,
 } from '../lib/questions/digitalQuestions';
 import { logAuditAnon } from '../lib/audit';
+import { AssessmentStartUnavailable } from '../components/AssessmentStartUnavailable';
+import { isAssessmentStartUnavailable } from '../lib/planUsage';
 
 const PROCESSING_MESSAGES = [
   'Analysing your responses…',
@@ -43,7 +45,7 @@ const DOMAIN_COLORS: Record<DigitalDomain, { bg: string; icon: string }> = {
   problem_solving: { bg: 'bg-violet-50', icon: 'text-violet-600' },
 };
 
-type Phase = 'loading' | 'invalid' | 'welcome' | 'declaration' | 'question' | 'processing' | 'done';
+type Phase = 'loading' | 'invalid' | 'welcome' | 'declaration' | 'question' | 'processing' | 'done' | 'unavailable';
 
 function ProgressBar({ value }: { value: number }) {
   return (
@@ -212,7 +214,7 @@ export function DigitalAssessmentPage({ token }: { token: string }) {
 
   async function startAssessment() {
     if (!invitation) return;
-    await quizClient
+    const { error: startError } = await quizClient
       .from('assessment_invitations')
       .update({
         status: 'in_progress',
@@ -220,6 +222,11 @@ export function DigitalAssessmentPage({ token }: { token: string }) {
         digital_status: 'in_progress',
       } as any)
       .eq('id', invitation.id);
+    // The server refuses new starts when the RTO cannot start more assessments this month.
+    if (isAssessmentStartUnavailable(startError)) {
+      setPhase('unavailable');
+      return;
+    }
 
     // Queue aXcelerate note for Digital quiz opened (idempotent — only fires once per invitation)
     await quizClient.from('axcelerate_writeback_queue').upsert(
@@ -354,6 +361,8 @@ export function DigitalAssessmentPage({ token }: { token: string }) {
   }
 
   // ─── INVALID ────────────────────────────────────────────────────────────────
+  if (phase === 'unavailable') return <AssessmentStartUnavailable />;
+
   if (phase === 'invalid') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
