@@ -3313,7 +3313,8 @@ async function inspectCodexProviderImplementationEvidenceMcp(
   try {
     const fnResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/codex-health-check`, {
       method: "OPTIONS",
-      headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}` },
+      // Issue #45: server-to-server call; codex-health-check accepts the service role or an operator.
+      headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
     });
     const codexHealthDeployed = fnResponse.ok || fnResponse.status === 200 || fnResponse.status === 204;
     edgeFunctionDeploymentStatus = {
@@ -5602,6 +5603,25 @@ Deno.serve(async (req: Request) => {
 
     const userId = authData.user.id;
     const clientId = req.headers.get("X-Client-Id") ?? "mcp-client";
+
+    // Issue #45: governed EIOS tools are for MFA-verified platform operators
+    // only. The database enforces the same rule on every EIOS table.
+    const { data: isOperator } = await supabase.rpc("is_platform_operator");
+    if (isOperator !== true) {
+      await recordOAuthAuditEvent(supabase, {
+        event_type: "token_validation_failure",
+        user_id: userId,
+        client_id: clientId,
+        outcome: "denied",
+        failure_category: "not_platform_operator",
+        correlation_id: `MCP-${Date.now()}-operator`,
+        metadata: { reason: "Platform operator access with MFA is required" },
+      });
+      return new Response(JSON.stringify({ error: "Platform operator access with MFA is required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // ── EWO-017R.2R Connector Conversation Identity ──────────────────────────
     // The MCP protocol's Mcp-Session-Id header is the connector-managed

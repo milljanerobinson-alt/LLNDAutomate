@@ -12,6 +12,7 @@
 // Does NOT: create authority, bypass PO approval, execute code, modify lifecycle state
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 import { generate, type AIMessage } from "../_shared/ai-service.ts";
 
 const corsHeaders = {
@@ -338,6 +339,12 @@ function deterministicFallback(text: string): StructuredIntent {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  // Issue #45: platform operators with MFA only (trusted server-to-server calls with the service-role key also pass).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: true });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
   }
 
   const startTime = Date.now();

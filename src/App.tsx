@@ -62,6 +62,8 @@ import { SupportRoutingPage } from './pages/workspace/SupportRoutingPage';
 
 // Engineering
 import { EngineeringControlCentrePage } from './pages/EngineeringControlCentrePage';
+import { PlatformOperatorGate } from './components/operator/PlatformOperatorGate';
+import { OperatorSupportPage } from './pages/operator/OperatorSupportPage';
 
 // Public token routes
 import { LLNAssessmentPage } from './pages/LLNAssessmentPage';
@@ -250,22 +252,37 @@ function Router() {
       navigateInProduct('llnd', '#/rto-admin/dashboard');
       return <FullScreenLoader />;
     }
-    if (profile?.role !== 'admin') {
-      navigateInProduct('eios', '#/login');
-      return <FullScreenLoader />;
-    }
+    // Issue #45: EIOS needs an explicit platform-operator grant plus MFA.
+    // The legacy profiles.role = 'admin' value no longer grants access.
     setLastWorkspace('engineering');
     setLastPage('engineering', route.section);
     return (
-      <EngineeringLayout>
-        <FeatureErrorBoundary featureName="Engineering" routeKey={`engineering.${route.section}`}>
-          <EngineeringControlCentrePage
-            initialPage={route.section as any}
-            objectRef={route.objectRef ?? undefined}
-            subPath={route.subPath ?? undefined}
-          />
+      <PlatformOperatorGate>
+        <EngineeringLayout>
+          <FeatureErrorBoundary featureName="Engineering" routeKey={`engineering.${route.section}`}>
+            <EngineeringControlCentrePage
+              initialPage={route.section as any}
+              objectRef={route.objectRef ?? undefined}
+              subPath={route.subPath ?? undefined}
+            />
+          </FeatureErrorBoundary>
+        </EngineeringLayout>
+      </PlatformOperatorGate>
+    );
+  }
+
+  // ─── Platform operator RTO support (EIOS product only, Issue #45) ───────────
+  if (route.kind === 'operator-support') {
+    if (product === 'llnd') {
+      navigateInProduct('eios', '#/operator/support');
+      return <FullScreenLoader />;
+    }
+    return (
+      <PlatformOperatorGate>
+        <FeatureErrorBoundary featureName="RTO support" routeKey="operator.support">
+          <OperatorSupportPage />
         </FeatureErrorBoundary>
-      </EngineeringLayout>
+      </PlatformOperatorGate>
     );
   }
 
@@ -417,6 +434,7 @@ type Route =
   | { kind: 'quiz'; token: string }
   | { kind: 'student'; token: string }
   | { kind: 'engineering'; section: string; objectRef: string | null; subPath: string | null }
+  | { kind: 'operator-support' }
   | { kind: 'administration'; page: string }
   | { kind: 'candidate-support'; page: string }
   | { kind: 'technical'; page: string }
@@ -452,6 +470,8 @@ function parseHash(hash: string): Route {
     const parsed = parseEngineeringRoute(hash);
     return { kind: 'engineering', section: parsed.section, objectRef: parsed.objectRef, subPath: parsed.subPath };
   }
+
+  if (parts[0] === 'operator' && parts[1] === 'support') return { kind: 'operator-support' };
 
   if (parts[0] === 'oauth' && parts[1] === 'consent') return { kind: 'oauth-consent' };
   if (parts[0] === 'operator' && (parts[1] === 'invitations-usage' || parts[1] === 'deleted-assessments')) return { kind: 'platform-usage', page: parts[1] };
@@ -534,14 +554,10 @@ function resolveEiosWorkspace(
   profile: { role?: string } | null,
   _hasWorkspace: (ws: CustomerWorkspace) => boolean,
 ): AnyWorkspace {
-  // Admin: engineering is the EIOS admin workspace
-  if (profile?.role === 'admin') {
-    if (stored === 'engineering') return 'engineering';
-    // Stored workspace might be an LLND workspace — fall back to engineering
-    return 'engineering';
-  }
-  // Preserve the historical non-admin fallback. Because #/platform is an LLND
-  // route, boundary enforcement moves this navigation from /eios to the root.
+  // Issue #45: EIOS has one workspace (Engineering). Whether the user may
+  // enter it is decided by PlatformOperatorGate (operator grant + MFA), never
+  // by profiles.role. The stored workspace and profile are not consulted.
+  void stored; void profile;
   return 'engineering';
 }
 

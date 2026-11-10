@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,13 +29,20 @@ async function verifyAdmin(req: Request) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!profile || profile.role !== "admin") return null;
+  // Issue #45: operator status (grant + MFA) is enforced by requirePlatformOperator() in the request handler; the legacy profiles.role check is retired.
+  if (!profile) return null;
   return serviceClient;
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  // Issue #45: platform operators with MFA only (no service-role bypass for platform credentials).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: false });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
   }
 
   try {

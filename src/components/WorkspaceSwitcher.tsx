@@ -11,6 +11,7 @@ import {
   type CustomerWorkspace,
 } from '../lib/workspaceAccess';
 import { navigateInProduct, resolveProduct } from '../lib/productContext';
+import { usePlatformOperator } from './operator/PlatformOperatorGate';
 
 export type Workspace = AnyWorkspace;
 
@@ -86,6 +87,7 @@ interface WorkspaceSwitcherProps {
 
 export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) {
   const { user, profile, signOut } = useAuth();
+  const { status: operatorStatus } = usePlatformOperator();
   const { workspaces: customerAccess, loading: accessLoading } = useWorkspaceAccess();
   const [open, setOpen] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
@@ -117,7 +119,9 @@ export function WorkspaceSwitcher({ currentWorkspace }: WorkspaceSwitcherProps) 
   }, [user]);
 
   // Determine which workspaces this user can see
-  const isAdmin = profile?.role === 'admin';
+  // Issue #45: EIOS visibility follows the platform-operator check (grant +
+  // MFA), not the legacy profiles.role value.
+  const isAdmin = operatorStatus.operator;
   const product = resolveProduct();
   const availableWorkspaces = ALL_WORKSPACES.filter(ws => {
     if (product === 'eios') return ws.key === 'engineering' && isAdmin;

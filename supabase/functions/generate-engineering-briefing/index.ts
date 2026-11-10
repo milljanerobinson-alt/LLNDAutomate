@@ -1,5 +1,6 @@
 // @ts-nocheck — updated for Phase X scheduling support
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 import { generate, loadAIConfig } from "../_shared/ai-service.ts";
 
 const corsHeaders = {
@@ -30,7 +31,8 @@ async function verifyAuth(req: Request): Promise<{ svc: ReturnType<typeof create
   const { data: { user }, error } = await anonClient.auth.getUser(token);
   if (error || !user) return null;
   const { data: profile } = await svc.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!profile || !["admin", "trainer"].includes(profile.role)) return null;
+  // Issue #45: operator status (grant + MFA) is enforced by requirePlatformOperator() in the request handler; the legacy profiles.role check is retired.
+  if (!profile) return null;
   return { svc, userId: user.id, isCron: false };
 }
 
@@ -277,6 +279,13 @@ function parseJsonBlock(raw: string, start: string, end: string): Record<string,
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+
+  // Issue #45: platform operators with MFA only. Scheduled runs keep their own
+  // X-Cron-Secret validation below; service-role calls also pass.
+  if (!req.headers.get("X-Cron-Secret")) {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: true });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
+  }
 
   try {
     const authResult = await verifyAuth(req);

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test --project=desktop-chromium --project=mobile-chromium",
-    "test:e2e:authenticated": "playwright test --project=authenticated-chromium"
+    "test:e2e:authenticated": "playwright test --project=authenticated-chromium",
+    "test:e2e:operator": "playwright test --project=operator-chromium"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

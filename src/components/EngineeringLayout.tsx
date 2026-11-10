@@ -100,6 +100,14 @@ export function EngineeringLayout({ children }: EngineeringLayoutProps) {
             <span className="text-[10px] text-slate-500">⌘K</span>
           </button>
 
+          <a
+            href="#/operator/support"
+            data-testid="operator-support-link"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium"
+          >
+            RTO support
+          </a>
+
           <WorkspaceSwitcher currentWorkspace="engineering" />
         </div>
       </div>

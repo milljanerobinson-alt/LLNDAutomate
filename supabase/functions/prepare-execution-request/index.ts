@@ -8,6 +8,7 @@
 // NOT make authoritative decisions itself.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { operatorDeniedResponse, requirePlatformOperator } from "../_shared/platform-operator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,7 +104,8 @@ async function resolveAuthority(
   // Authority is determined server-side from the database role, not from
   // any client-supplied value. Only admin/product_owner/po/approver roles
   // are authorised to prepare execution requests.
-  const isAuthorised = ["admin", "product_owner", "po", "approver"].includes(role);
+  // Issue #45: operator status (grant + MFA) is enforced by requirePlatformOperator() in the request handler; the legacy profiles.role check is retired.
+  const isAuthorised = true;
 
   return { user_id: userId, user_email: userEmail, role, is_authorised: isAuthorised, authority_source: "authenticated_session" };
 }
@@ -358,6 +360,12 @@ async function findOrCreateExecutionRequest(
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  // Issue #45: platform operators with MFA only (trusted server-to-server calls with the service-role key also pass).
+  {
+    const operatorCheck = await requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: true });
+    if (!operatorCheck.ok) return operatorDeniedResponse(operatorCheck, corsHeaders);
   }
 
   try {

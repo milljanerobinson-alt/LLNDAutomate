@@ -41,5 +41,10 @@ export default defineConfig({
       testMatch: /issue040\.authenticated\.spec\.ts/,
       use: { viewport: { width: 1440, height: 900 } },
     },
+    {
+      name: 'operator-chromium',
+      testMatch: /issue045\.operator\.spec\.ts/,
+      use: { viewport: { width: 1440, height: 900 } },
+    },
   ],
 });

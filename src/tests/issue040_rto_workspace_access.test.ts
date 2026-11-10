@@ -471,7 +471,10 @@ describe('Issue #40 Product Owner refinement — organisation-scoped Administrat
     expect(webhook).toContain('Stripe webhook secret is not configured');
     expect(webhook).toContain('resolveEventOrganisation(supabase, obj)');
     expect(webhook).toContain('.eq("organisation_id", organisationId)');
-    expect(fn('save-stripe-key')).toContain('isIntegrationStaff(req.headers.get("Authorization"), ["administration"])');
+    // Issue #45 superseded the interim #40 guard: saving the platform Stripe
+    // key now needs an MFA-verified platform operator (stricter than RTO
+    // Administration of the integration organisation).
+    expect(fn('save-stripe-key')).toContain('requirePlatformOperator(req.headers.get("Authorization"), { allowServiceRole: false })');
   });
 });
 
