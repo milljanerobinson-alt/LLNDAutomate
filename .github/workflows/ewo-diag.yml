@@ -1,0 +1,132 @@
+# Staging rehearsal for feature/staging-readiness (throwaway ewo/diag-* branch; never merged).
+# Everything runs on the CI runner: a local Supabase stack (Docker) and a local preview.
+# No hosted Supabase, Cloudflare or deployment is touched.
+name: EWO Staging Rehearsal
+on:
+  push:
+    branches: ['ewo/**']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VITE_SUPABASE_URL: http://127.0.0.1:54321
+      VITE_SUPABASE_ANON_KEY: local-preview-placeholder-key
+      BASE_REF: feature/llnd-mate-test-candidates
+      LOCAL_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install (head and base)
+        run: |
+          npm ci --no-audit --no-fund > /tmp/npm.log 2>&1 || (tail -20 /tmp/npm.log; exit 1)
+          git worktree add /tmp/base origin/$BASE_REF -q
+          (cd /tmp/base && npm ci --no-audit --no-fund > /tmp/npm-base.log 2>&1)
+      - name: Focused Vitest suites
+        shell: bash
+        run: |
+          set +e
+          npx vitest run src/tests/p0_free_tier_invitations.test.tsx src/tests/llnd_mate_test_candidates.test.tsx src/tests/llnd_mate_rebrand.test.ts src/tests/llnd_independence_brand_foundation.test.ts src/tests/issue040_rto_workspace_access.test.ts src/tests/assessment_result_validity.test.ts src/tests/p1_integration_safety.test.ts src/tests/clean_install_migration_safety.test.ts src/tests/ewo033_security_regression.test.ts src/tests/issue045_platform_operator_access.test.ts src/tests/build_env_guard.test.ts src/tests/router_redirect_loop.test.ts --reporter=json --outputFile=/tmp/focused.json > /tmp/focused.log 2>&1
+          node -e 'const r=require("/tmp/focused.json");const f=r.testResults.map(t=>t.name.split("/").pop()+": "+t.assertionResults.filter(a=>a.status==="passed").length+"/"+t.assertionResults.length);const fails=r.testResults.flatMap(t=>t.assertionResults.filter(a=>a.status==="failed").map(a=>a.fullName+" :: "+(a.failureMessages||[]).join(" ").replace(/\s+/g," ").slice(0,300)));const bad=r.testResults.filter(t=>t.status==="failed"&&t.assertionResults.length===0).map(t=>"SUITE ERROR "+t.name.split("/").pop()+": "+String(t.message).replace(/\s+/g," ").slice(0,400));console.log("::notice title=FOCUSED::"+["passed="+r.numPassedTests+" failed="+r.numFailedTests,...f,...fails.slice(0,10),...bad].join("%0A"))'
+      - name: Full Vitest suite, head vs base
+        shell: bash
+        run: |
+          set +e
+          npx vitest run --reporter=json --outputFile=/tmp/head.json > /tmp/head.log 2>&1
+          (cd /tmp/base && npx vitest run --reporter=json --outputFile=/tmp/base.json > /tmp/base.log 2>&1)
+          node -e '
+            const h=require("/tmp/head.json"), b=require("/tmp/base.json");
+            const failed=r=>new Set(r.testResults.flatMap(t=>t.assertionResults.filter(a=>a.status==="failed").map(a=>t.name.replace(/.*\/src\//,"src/")+" > "+a.fullName)));
+            const fh=failed(h), fb=failed(b);
+            const newF=[...fh].filter(x=>!fb.has(x)), fixed=[...fb].filter(x=>!fh.has(x));
+            const s="head: "+h.numPassedTests+" passed / "+h.numFailedTests+" failed / "+h.numPendingTests+" skipped%0Abase: "+b.numPassedTests+" passed / "+b.numFailedTests+" failed / "+b.numPendingTests+" skipped%0Anew failures vs base: "+newF.length+"%0Afixed vs base: "+fixed.length+"%0A"+newF.slice(0,15).map(x=>"NEW "+x.slice(0,220)).join("%0A");
+            console.log("::notice title=FULL_SUITE::"+s);'
+      - name: TypeScript, head vs base
+        shell: bash
+        run: |
+          set +e
+          npx tsc -p tsconfig.app.json --noEmit > /tmp/tsc-head.txt 2>&1; h=$(grep -c "error TS" /tmp/tsc-head.txt)
+          (cd /tmp/base && npx tsc -p tsconfig.app.json --noEmit > /tmp/tsc-base.txt 2>&1); b=$(grep -c "error TS" /tmp/tsc-base.txt)
+          changed=$(git diff --name-only origin/$BASE_REF...HEAD | grep -E '^src/.*\.tsx?$' | grep -v '^src/tests/' | tr '\n' '|' | sed 's/|$//')
+          inchanged=$(grep "error TS" /tmp/tsc-head.txt | grep -E "^($changed)" | head -10 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-2500)
+          echo "::notice title=TSC::head=$h base=$b%0Aerrors in changed files:%0A${inchanged:-none}"
+      - name: Build
+        run: |
+          npm run build > /tmp/build.log 2>&1; rc=$?
+          echo "::notice title=BUILD::rc=$rc $(grep -E 'built in' /tmp/build.log | tail -1 | cut -c1-200)"
+          exit $rc
+      - name: Cloudflare preview guard simulation (no deployment)
+        shell: bash
+        run: |
+          set +e
+          CF_PAGES=1 CF_PAGES_BRANCH=feature/staging-readiness VITE_SUPABASE_URL=https://clrsckerimjturebulbk.supabase.co npx vite build --outDir /tmp/g1 > /tmp/g1.log 2>&1; p1=$?
+          CF_PAGES=1 CF_PAGES_BRANCH=ewo/diag-anything VITE_SUPABASE_URL=https://clrsckerimjturebulbk.supabase.co npx vite build --outDir /tmp/g2 > /tmp/g2.log 2>&1; p2=$?
+          CF_PAGES=1 CF_PAGES_BRANCH=main VITE_SUPABASE_URL=https://clrsckerimjturebulbk.supabase.co npx vite build --outDir /tmp/g3 > /tmp/g3.log 2>&1; p3=$?
+          echo "::notice title=PREVIEW_GUARD::preview->original rc=$p1 ($(grep -o 'build-env-guard[^\"]*' /tmp/g1.log | head -1 | cut -c1-200))%0Adiag preview->original rc=$p2%0Amain->original rc=$p3 ($(grep -o 'build-env-guard[^\"]*' /tmp/g3.log | head -1 | cut -c1-120))"
+          [ $p1 -ne 0 ] && [ $p2 -ne 0 ] && [ $p3 -eq 0 ]
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Local Supabase stack + clean-install bootstrap (all migrations, one transaction)
+        shell: bash
+        run: |
+          set +e
+          mkdir -p /tmp/sb && cd /tmp/sb && supabase init --force > /dev/null
+          supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,postgres-meta,realtime > /tmp/sb-start.log 2>&1 || (tail -40 /tmp/sb-start.log; exit 1)
+          cd "$GITHUB_WORKSPACE"
+          scripts/clean-install/bootstrap-database.sh --db-url "$LOCAL_DB_URL" --source-commit "$(git rev-parse HEAD)" --execute > /tmp/bootstrap.log 2>&1; rc=$?
+          echo "::notice title=BOOTSTRAP::rc=$rc%0A$(grep -E 'PASS|FAIL|migrations=|ERROR|LINE|refused|psql:' /tmp/bootstrap.log | tail -25 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-3500)%0ATAIL:%0A$(tail -8 /tmp/bootstrap.log | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-1500)"
+          # Strict: Issue #45 is now in the migration set, so every verification check must pass.
+          grep -q "provenance: one single-transaction install run recorded" /tmp/bootstrap.log || exit 1
+          fails=$(grep -E "^\s*FAIL" /tmp/bootstrap.log || true)
+          echo "::notice title=BOOTSTRAP_VERIFY::fail_lines=$(echo -n "$fails" | grep -c . ) pass_lines=$(grep -cE '^\s*PASS' /tmp/bootstrap.log)"
+          [ -z "$fails" ] || { echo "$fails"; exit 1; }
+          psql "$LOCAL_DB_URL" -X -A -t -c "select count(*) from supabase_migrations.schema_migrations" > /tmp/mcount.txt 2>&1
+          psql "$LOCAL_DB_URL" -X -A -t -c "select count(*) filter (where active), count(*) from cron.job" > /tmp/cron.txt 2>&1
+          echo "::notice title=REHEARSAL_STATE::migrations_recorded=$(cat /tmp/mcount.txt) files=$(ls supabase/migrations/*.sql | wc -l) cron(active,total)=$(cat /tmp/cron.txt)"
+          psql "$LOCAL_DB_URL" -X -v ON_ERROR_STOP=1 -f scripts/clean-install/rehearsal-isolation-check.sql > /tmp/iso.log 2>&1; ri=$?
+          echo "::notice title=ISOLATION::rc=$ri%0A$(tail -25 /tmp/iso.log | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-2500)"
+          exit $ri
+      - name: DB integration tests (invitations, Test Candidates, platform operators, concurrency)
+        shell: bash
+        run: |
+          set +e
+          psql "$LOCAL_DB_URL" -X -v ON_ERROR_STOP=1 -f tests/db/free_tier_invitations.test.sql > /tmp/dbtest.log 2>&1; rc=$?
+          p=$(grep -c "PASS:" /tmp/dbtest.log); f=$(grep -E "FAIL|ERROR" /tmp/dbtest.log | head -5 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-1500)
+          echo "::notice title=DB_TESTS::rc=$rc passed_checks=$p $(grep -c 'ALL INVITATION METERING CHECKS PASSED' /tmp/dbtest.log)%0A${f}"
+          psql "$LOCAL_DB_URL" -X -v ON_ERROR_STOP=1 -f tests/db/test_candidates.test.sql > /tmp/dbtc.log 2>&1; rc3=$?
+          echo "::notice title=DB_TEST_CANDIDATES::rc=$rc3 passed_checks=$(grep -c 'PASS:' /tmp/dbtc.log) $(grep -c 'ALL TEST CANDIDATE CHECKS PASSED' /tmp/dbtc.log)%0A$(grep -E 'FAIL|ERROR' /tmp/dbtc.log | head -5 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-1500)"
+          psql "$LOCAL_DB_URL" -X -v ON_ERROR_STOP=1 -f tests/db/platform_operator_access.test.sql > /tmp/dbop.log 2>&1; r45=$?
+          echo "::notice title=DB_PLATFORM_OPERATORS::rc=$r45 passed_checks=$(grep -c 'PASS:' /tmp/dbop.log) $(grep -c 'ALL PLATFORM OPERATOR CHECKS PASSED' /tmp/dbop.log)%0A$(grep -E 'FAIL|ERROR' /tmp/dbop.log | head -5 | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-1500)"
+          DB_URL="$LOCAL_DB_URL" bash tests/db/free_tier_invitations_concurrency.sh > /tmp/dbconc.log 2>&1; rc2=$?
+          echo "::notice title=DB_CONCURRENCY::rc=$rc2%0A$(grep -E 'PASS|FAIL|ALL' /tmp/dbconc.log | tr '\n' '~' | sed 's/~/%0A/g' | cut -c1-2500)"
+          exit $(( rc || rc2 || rc3 || r45 ))
+      - name: Browser checks (website on local preview; Plan & usage states on local dev server)
+        shell: bash
+        run: |
+          set +e
+          supabase stop --project-id sb --no-backup > /dev/null 2>&1 || (cd /tmp/sb && supabase stop --no-backup > /dev/null 2>&1)
+          npx playwright install --with-deps chromium > /tmp/pw-install.log 2>&1
+          npx vite preview --host 127.0.0.1 --port 4173 --strictPort > /tmp/preview.log 2>&1 &
+          npx vite --host 127.0.0.1 --port 5173 --strictPort > /tmp/dev.log 2>&1 &
+          for i in $(seq 1 40); do curl -sf http://127.0.0.1:4173/ >/dev/null && curl -sf http://127.0.0.1:5173/tests/e2e/harness/plan-usage.html >/dev/null && break; sleep 1; done
+          mkdir -p test-results/screenshots
+          BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/llnd-mate.website.spec.ts tests/e2e/product-boundary.smoke.spec.ts --project=desktop-chromium --project=mobile-chromium --reporter=json > /tmp/pw1.json 2> /tmp/pw1.err
+          BASE_URL=http://127.0.0.1:5173 npx playwright test tests/e2e/plan-usage.states.spec.ts --project=desktop-chromium --project=mobile-chromium --reporter=json > /tmp/pw2.json 2> /tmp/pw2.err
+          for f in pw1 pw2; do node -e '
+            const r=require("/tmp/"+process.argv[1]+".json"); const out=[];
+            const walk=(s)=>{for(const x of s.suites||[])walk(x);for(const sp of s.specs||[])for(const t of sp.tests){const res=t.results[t.results.length-1]||{};out.push((res.status||"?")+" ["+t.projectName+"] "+sp.title+(res.status!=="passed"&&res.error?" :: "+String(res.error.message).replace(/\u001b\[[0-9;]*m/g,"").replace(/\s+/g," ").slice(0,300):""));}};
+            for(const s of r.suites)walk(s);
+            const st=r.stats||{}; console.log("::notice title=PLAYWRIGHT_"+process.argv[1]+"::expected="+st.expected+" unexpected="+st.unexpected+" skipped="+st.skipped+"%0A"+out.filter(l=>!l.startsWith("passed")).slice(0,20).join("%0A"));' $f; done
+      - name: Publish screenshots to a throwaway branch
+        if: always()
+        run: |
+          set -e
+          mkdir -p /tmp/shots && cp -r test-results/screenshots/* /tmp/shots/ 2>/dev/null || true
+          cd /tmp/shots && git init -q && git checkout -q -b ewo/diag-staging-screens
+          git -c user.name="ci" -c user.email="ci@example.invalid" add -A && git -c user.name="ci" -c user.email="ci@example.invalid" commit -q -m "screenshots (throwaway)" || exit 0
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ewo/diag-staging-screens
+          echo "::notice title=SCREENS::$(ls | wc -l) files pushed"
