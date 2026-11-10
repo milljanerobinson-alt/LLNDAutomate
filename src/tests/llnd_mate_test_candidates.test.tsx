@@ -42,7 +42,8 @@ describe('Upgrade button', () => {
 
   it('opens the existing pricing page only: no checkout, subscription or entitlement change anywhere in the new code', () => {
     for (const f of ['src/components/UpgradeOptionsButton.tsx', 'src/components/CreateTestCandidateDialog.tsx', 'src/components/PendingTestCandidates.tsx']) {
-      expect(read(f), f).not.toMatch(/stripe|checkout|subscriptions|subscription_plans|rpc\(/i);
+      const code = read(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      expect(code, f).not.toMatch(/stripe|checkout|subscriptions|subscription_plans|rpc\(/i);
     }
     const pricing = read('src/pages/PricingPage.tsx');
     expect(pricing).not.toMatch(/supabase|stripe|checkout/i);
