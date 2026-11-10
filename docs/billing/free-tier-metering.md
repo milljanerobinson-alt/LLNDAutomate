@@ -37,6 +37,24 @@ which was never applied outside local/CI tests and has been removed from the bra
 - Excluded from the RTO dashboard statistics, compliance report and export, and the support-plans list.
 - Test learners still receive their invitation email, can complete the assessment, and staff can review the results. These are labelled TEST.
 
+### Test Candidates (migration `20261110150000_llnd_mate_test_candidates.sql`)
+
+- **How the Candidates page sends assessments.** Each row is one `assessment_invitations` row. **New Invitation** creates the invitation (name, email, date of birth, qualification and LLN/Digital selection), links the chosen assessments and calls `send-email`. Row actions are Timeline, Edit, Send reminder and Delete. There is no candidate record separate from an invitation, and no "send to an existing candidate" action.
+- **What was added.**
+  - **Create Test Candidate** creates a server-side test identity (`test_candidates`). It is not an invitation and uses no allowance.
+  - Its **Send assessment** action opens the existing New Invitation form with the name and email locked, so assessment selection, invitation creation and email delivery are the existing ones.
+  - Test Candidates with no assessment yet are listed at the top of In progress. Once an assessment is sent, it appears as a normal TEST row.
+- **Naming.**
+  - `create_test_candidate(email)` takes the next number from a per-RTO counter (row-locked, only increases): "Test Test", "Test Test2", "Test Test3" and so on.
+  - Names are unique per RTO (constraint) and never reused after deletion.
+  - `preview_next_test_candidate_name()` shows the likely next name; the server's allocation is final.
+- **Locking.**
+  - An invitation with `test_candidate_id` is always a test. The server copies the Test Candidate's name and email, and clears any learner or aXcelerate contact link.
+  - The link, name, email and test flag cannot be changed. A genuine invitation cannot be linked to a Test Candidate later.
+  - `test_candidates` is read-only to clients and visible to own-RTO administrators only.
+- **Compatibility.** An invitation named exactly "Test Test" is still a test (approved rule). Typing "Test Test2" by hand creates a genuine, counted invitation: generated names are tests only through the button.
+- **Deletion.** `delete_test_candidate(id, 'YES')` soft-deletes a Test Candidate. Assessments already sent to it are deleted through the existing assessment deletion, which changes no allowance for tests.
+
 ### Soft deletion (RTO administrators)
 
 - `delete_assessment_assignment(id, confirmation)`:
@@ -164,3 +182,8 @@ The migration adds columns, tables, functions, triggers and policies, and replac
 3. Restore the previous `trigger_billing_on_assessment_complete` body (from 20260629091944).
 4. Drop the new functions.
 5. Keep the new tables and columns for audit unless their removal is approved.
+6. Test Candidates (20261110150000), rolled back first:
+   - drop trigger `llnd_mate_bind_test_candidate`;
+   - restore the 20261110090000 bodies of `llnd_mate_issue_invitation` and `llnd_mate_protect_invitation_fields`;
+   - drop `create_test_candidate`, `preview_next_test_candidate_name`, `delete_test_candidate` and `llnd_test_candidate_name`;
+   - keep `test_candidates`, the counters and `test_candidate_id` for audit unless removal is approved.

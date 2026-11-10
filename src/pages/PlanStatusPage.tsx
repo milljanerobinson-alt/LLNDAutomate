@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Info, Loader2, Lock, RefreshCw, XCircle } from 'lucide-react';
 import { FREE_TIER_RULES, PLANS, TIER_PLUS } from '../lib/brand';
+import { UpgradeOptionsButton } from '../components/UpgradeOptionsButton';
 import { fetchPlanUsage, formatResetDate, type PlanUsageState } from '../lib/planUsage';
 
 // Signed-in "Plan & usage" page for RTO administrators.
@@ -198,9 +199,11 @@ export function PlanUsageView({ state, onRetry }: { state: PlanUsageState; onRet
         </Notice>
       )}
       {level === 'exhausted' && (
-        <Notice tone="stop" icon={XCircle} title={`You’ve used all ${allowance} free invitations for this month.`}>
-          <p>New invitations can’t be sent until {reset}. Learners you have already invited can still start and finish their assessments.</p>
-          <p>Deleting an assessment sent this month returns its invitation.</p>
+        <Notice tone="stop" icon={XCircle} title={`You’ve used all ${allowance} free invitations this month.`}>
+          <p>Learners you have already invited can still complete their assessments. Your allowance resets on {reset}.</p>
+          <p>Deleting an assessment sent this month returns its invitation to your allowance.</p>
+          <p>Upgrading to a paid plan will allow additional assessments once paid plans become available.</p>
+          <UpgradeOptionsButton />
         </Notice>
       )}
 

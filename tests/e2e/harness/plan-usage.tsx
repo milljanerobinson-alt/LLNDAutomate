@@ -9,6 +9,10 @@ import { PlanUsageView } from '../../../src/pages/PlanStatusPage';
 import { UsageAllowanceNoticeView } from '../../../src/components/UsageAllowanceNotice';
 import { DeleteAssessmentDialog } from '../../../src/components/DeleteAssessmentDialog';
 import { TestBadge } from '../../../src/components/TestBadge';
+import { CreateTestCandidateDialog } from '../../../src/components/CreateTestCandidateDialog';
+import { PendingTestCandidates } from '../../../src/components/PendingTestCandidates';
+import type { TestCandidate } from '../../../src/lib/planUsage';
+import { FlaskConical, Plus } from 'lucide-react';
 import { UsageDetailView, UsageTableView } from '../../../src/pages/operator/PlatformInvitationsUsagePage';
 import { DeletedAssessmentsView } from '../../../src/pages/operator/PlatformDeletedAssessmentsPage';
 import type { DeletedAssessmentRow, RtoUsageRow } from '../../../src/lib/platformUsage';
@@ -78,10 +82,61 @@ function TestRowDemo() {
   );
 }
 
+function CreateTestDemo() {
+  const [open, setOpen] = useState(true);
+  const [calls, setCalls] = useState<string[]>([]);
+  const create = async (email: string) => {
+    setCalls((c) => [...c, email]);
+    await new Promise((r) => setTimeout(r, 400));
+    return { ok: true as const, candidate: { id: 'tc-new', candidateName: 'Test Test2', email, sequenceNumber: 2, createdAt: '2026-11-10T00:00:00Z' } };
+  };
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-slate-900">Candidates</h1>
+      <p data-testid="create-calls">{calls.join(',')}</p>
+      <p data-testid="created">{open ? '' : 'created'}</p>
+      <CreateTestCandidateDialog open={open} onClose={() => setOpen(false)} onCreated={() => setOpen(false)}
+        preview={async () => 'Test Test2'} create={create} />
+    </div>
+  );
+}
+
+const PENDING: TestCandidate[] = [
+  { id: 'tc3', candidateName: 'Test Test3', email: 'trainer@coastal.example', sequenceNumber: 3, createdAt: '2026-11-10T01:00:00Z' },
+];
+
+function CandidatesDemo() {
+  const [sent, setSent] = useState('');
+  return (
+    <div className="max-w-6xl space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div><h1 className="text-2xl font-bold text-slate-900">Candidates</h1><p className="text-sm text-slate-500 mt-1">Track learner progress through LLN and Digital assessments.</p></div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary"><FlaskConical className="w-4 h-4" /> Create Test Candidate</button>
+          <button className="btn-primary"><Plus className="w-4 h-4" /> New Invitation</button>
+        </div>
+      </div>
+      <div className="rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800" role="status">Test Test3 created. Select “Send assessment” to choose LLN, Digital or both.</div>
+      <p data-testid="send-target">{sent}</p>
+      <PendingTestCandidates candidates={PENDING} highlightId="tc3" onSend={(tc) => setSent(tc.candidateName)} onDelete={() => undefined} />
+      <div className="card divide-y divide-slate-100">
+        {[['Jordan Example', 'jordan@example.invalid', false, 'In progress'], ['Test Test2', 'trainer@coastal.example', true, 'Sent · LLN + Digital'], ['Test Test', 'trainer@coastal.example', true, 'Completed']].map(([n, e, t, st]) => (
+          <div key={String(n)} className="p-4 flex justify-between gap-3">
+            <div><div className="font-medium text-slate-900">{n}{t && <TestBadge />}</div><div className="text-xs text-slate-500">{e}</div></div>
+            <span className="text-sm text-slate-600">{st}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const content = (() => {
   switch (view) {
     case 'notice': return <div className="max-w-4xl space-y-4"><h1 className="text-2xl font-bold text-slate-900">Candidates</h1><UsageAllowanceNoticeView state={state} /></div>;
     case 'delete': return <DeleteDemo />;
+    case 'create-test': return <CreateTestDemo />;
+    case 'candidates': return <CandidatesDemo />;
     case 'test': return <TestRowDemo />;
     case 'operator-usage': return <div className="space-y-4"><h1 className="text-2xl font-bold text-slate-900">Invitations &amp; Usage</h1><UsageTableView state={q.get('denied') ? { kind: 'unauthorised' } : { kind: 'ok', data: RTOS }} onOpen={() => undefined} /></div>;
     case 'operator-detail': return <UsageDetailView row={RTOS[0]} onBack={() => undefined} history={{ kind: 'ok', data: [

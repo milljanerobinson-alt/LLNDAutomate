@@ -4,7 +4,7 @@ import {
   Users, Mail, Plus, Search, Send, Bell, Eye, PlayCircle,
   CheckCircle2, X, Calendar, Loader2, Pencil, Trash2,
   BookOpen, Monitor, Copy, Check, GraduationCap, Clock,
-  Activity, ChevronRight, MoreHorizontal, FileCheck, Ban,
+  Activity, ChevronRight, MoreHorizontal, FileCheck, Ban, FlaskConical,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type {
@@ -15,7 +15,9 @@ import { STATUS_COLORS, STUDENT_STATUS_CONFIG, RECOMMENDATION_LABELS, RECOMMENDA
 import { logAudit, enqueueAxcelerateWriteback } from '../lib/audit';
 import { UsageAllowanceNotice } from '../components/UsageAllowanceNotice';
 import { DeleteAssessmentDialog } from '../components/DeleteAssessmentDialog';
-import { deleteAssessmentAssignment, isInvitationAllowanceReached, isInvitationPlanUnconfirmed, looksLikeReservedTestName } from '../lib/planUsage';
+import { deleteAssessmentAssignment, deleteTestCandidate, isInvitationAllowanceReached, isInvitationPlanUnconfirmed, listTestCandidates, looksLikeReservedTestName, type TestCandidate } from '../lib/planUsage';
+import { CreateTestCandidateDialog } from '../components/CreateTestCandidateDialog';
+import { PendingTestCandidates } from '../components/PendingTestCandidates';
 
 type StudentTab = 'in_progress' | 'completed';
 
@@ -398,6 +400,12 @@ export function CandidatesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InvitationWithQualification | null>(null);
+  // Test Candidates: server-named test identities. Assessments go to them through the normal invitation form.
+  const [testCandidates, setTestCandidates] = useState<TestCandidate[]>([]);
+  const [showCreateTest, setShowCreateTest] = useState(false);
+  const [sendingTo, setSendingTo] = useState<TestCandidate | null>(null);
+  const [deleteTestTarget, setDeleteTestTarget] = useState<TestCandidate | null>(null);
+  const [highlightTestId, setHighlightTestId] = useState<string | null>(null);
   const [usageRefresh, setUsageRefresh] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -420,6 +428,7 @@ export function CandidatesPage() {
       supabase.from('assessments').select('*').eq('status', 'active').order('title'),
       supabase.from('organisation_settings').select('key, value').eq('key', 'org_branding').maybeSingle(),
     ]);
+    setTestCandidates(await listTestCandidates());
 
     if (invRes.error) {
       setError(invRes.error.message);
@@ -447,6 +456,12 @@ export function CandidatesPage() {
   }, [invitations, searchQuery]);
 
   const tabItems = activeTab === 'in_progress' ? inProgress : completed;
+  const pendingTestCandidates = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    const withAssessment = new Set(invitations.map((i) => i.test_candidate_id).filter(Boolean));
+    return testCandidates.filter((t) => !withAssessment.has(t.id)
+      && (!q || t.candidateName.toLowerCase().includes(q) || t.email.toLowerCase().includes(q)));
+  }, [testCandidates, invitations, searchQuery]);
 
   function toggleAssessment(id: string) {
     setForm((prev) => {
@@ -456,7 +471,27 @@ export function CandidatesPage() {
   }
 
   function resetForm() { setForm(EMPTY_FORM); setError(null); }
-  function closeModal() { setShowModal(false); setEditingInvitation(null); resetForm(); }
+  function closeModal() { setShowModal(false); setEditingInvitation(null); setSendingTo(null); resetForm(); }
+
+  // Opens the existing New Invitation form for a Test Candidate: same assessment
+  // selection, invitation creation and email delivery. Name and email are locked
+  // (the server applies the Test Candidate's own values regardless).
+  function openSendToTestCandidate(tc: TestCandidate) {
+    setNotice(null);
+    setEditingInvitation(null);
+    setSendingTo(tc);
+    setForm({ ...EMPTY_FORM, candidateName: tc.candidateName, candidateEmail: tc.email });
+    setShowModal(true);
+  }
+
+  async function confirmDeleteTestCandidate(id: string, confirmation: string): Promise<string | null> {
+    const r = await deleteTestCandidate(id, confirmation);
+    if (!r.ok) return r.message;
+    setTestCandidates((prev) => prev.filter((t) => t.id !== id));
+    setDeleteTestTarget(null);
+    setNotice('Test Candidate deleted. Its name won’t be reused.');
+    return null;
+  }
 
   async function openEdit(inv: InvitationWithQualification) {
     const { data } = await supabase
@@ -618,6 +653,7 @@ export function CandidatesPage() {
             candidate_dob: form.candidateDob || null,
             unique_token: token, status: 'sent', sent_at: now, progress_percent: 0,
             due_date: form.dueDate || null, created_by: user?.id || null,
+            test_candidate_id: sendingTo?.id ?? null,
             lln_token: llnToken, lln_status: hasLLN ? 'pending' : null,
             digital_token: digitalToken, digital_status: hasDigital ? 'pending' : null,
             rto_name: orgName || null,
@@ -734,10 +770,33 @@ export function CandidatesPage() {
             Track learner progress through LLN and Digital assessments.
           </p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary">
-          <Plus className="w-4 h-4" /> New Invitation
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => { setNotice(null); setShowCreateTest(true); }} className="btn-secondary">
+            <FlaskConical className="w-4 h-4" /> Create Test Candidate
+          </button>
+          <button onClick={() => setShowModal(true)} className="btn-primary">
+            <Plus className="w-4 h-4" /> New Invitation
+          </button>
+        </div>
       </div>
+
+      <CreateTestCandidateDialog
+        open={showCreateTest}
+        onClose={() => setShowCreateTest(false)}
+        onCreated={(tc) => {
+          setShowCreateTest(false);
+          setTestCandidates((prev) => [tc, ...prev.filter((t) => t.id !== tc.id)]);
+          setActiveTab('in_progress');
+          setSearchQuery('');
+          setHighlightTestId(tc.id);
+          setNotice(`${tc.candidateName} created. Select “Send assessment” to choose LLN, Digital or both.`);
+        }}
+      />
+      <DeleteAssessmentDialog
+        target={deleteTestTarget ? { id: deleteTestTarget.id, learnerName: deleteTestTarget.candidateName } : null}
+        onCancel={() => setDeleteTestTarget(null)}
+        onConfirm={confirmDeleteTestCandidate}
+      />
 
       <UsageAllowanceNotice refreshKey={usageRefresh} />
       {notice && (
@@ -813,12 +872,18 @@ export function CandidatesPage() {
         </div>
       </div>
 
+      {/* Test Candidates with no assessment sent yet (they appear as normal rows once one is sent) */}
+      {!loading && activeTab === 'in_progress' && (
+        <PendingTestCandidates candidates={pendingTestCandidates} highlightId={highlightTestId}
+          onSend={openSendToTestCandidate} onDelete={(tc) => setDeleteTestTarget(tc)} />
+      )}
+
       {/* List */}
       {loading ? (
         <div className="flex items-center justify-center py-20 text-slate-400">
           <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading candidates...
         </div>
-      ) : tabItems.length === 0 ? (
+      ) : tabItems.length === 0 && !(activeTab === 'in_progress' && pendingTestCandidates.length > 0) ? (
         <div className="card p-12 text-center">
           <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
           <h3 className="text-base font-semibold text-slate-900 mb-1">
@@ -839,7 +904,7 @@ export function CandidatesPage() {
             </button>
           )}
         </div>
-      ) : (
+      ) : tabItems.length === 0 ? null : (
         <>
           {/* Desktop table */}
           <div className="card overflow-hidden hidden md:block">
@@ -953,6 +1018,11 @@ export function CandidatesPage() {
                             >
                               {remindingId === inv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                             </button>
+                            {inv.test_candidate_id && testCandidates.some((t) => t.id === inv.test_candidate_id) && (
+                              <button onClick={() => openSendToTestCandidate(testCandidates.find((t) => t.id === inv.test_candidate_id)!)} className="btn-ghost text-xs px-2 py-1" title="Send another assessment to this Test Candidate">
+                                <FlaskConical className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => handleDelete(inv)}
                               disabled={deletingId === inv.id}
@@ -1032,6 +1102,11 @@ export function CandidatesPage() {
                       >
                         {remindingId === inv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
                       </button>
+                      {inv.test_candidate_id && testCandidates.some((t) => t.id === inv.test_candidate_id) && (
+                        <button onClick={() => openSendToTestCandidate(testCandidates.find((t) => t.id === inv.test_candidate_id)!)} className="btn-ghost text-xs px-2 py-1" title="Send another assessment to this Test Candidate">
+                          <FlaskConical className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDelete(inv)}
                         disabled={deletingId === inv.id}
@@ -1055,12 +1130,14 @@ export function CandidatesPage() {
             <div className="flex items-center justify-between p-5 border-b border-slate-200 sticky top-0 bg-white rounded-t-xl">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">
-                  {editingInvitation ? 'Edit Invitation' : 'New Assessment Invitation'}
+                  {editingInvitation ? 'Edit Invitation' : sendingTo ? `Send assessment to ${sendingTo.candidateName}` : 'New Assessment Invitation'}
                 </h2>
                 <p className="text-sm text-slate-500 mt-0.5">
                   {editingInvitation
                     ? 'Update candidate details and assessment selection.'
-                    : 'Send a combined LLN + Digital quiz invitation to a candidate.'}
+                    : sendingTo
+                      ? 'Choose the assessments to send. Test Candidate assessments are free and don’t count towards your monthly allowance.'
+                      : 'Send a combined LLN + Digital quiz invitation to a candidate.'}
                 </p>
               </div>
               <button onClick={closeModal} className="btn-ghost p-1.5" disabled={submitting}>
@@ -1076,12 +1153,14 @@ export function CandidatesPage() {
                     id="candidate-name" type="text" required
                     value={form.candidateName}
                     onChange={(e) => setForm({ ...form, candidateName: e.target.value })}
-                    className="input" placeholder="Jane Smith" disabled={submitting || !!editingInvitation?.is_test}
+                    className="input" placeholder="Jane Smith" disabled={submitting || !!editingInvitation?.is_test || !!sendingTo}
                   />
-                  {editingInvitation?.is_test ? (
+                  {sendingTo ? (
+                    <p className="text-xs text-slate-500 mt-1">Test Candidate name and email are set by LLND Mate and can’t be changed.</p>
+                  ) : editingInvitation?.is_test ? (
                     <p className="text-xs text-slate-500 mt-1">This is a test assessment. The learner name can’t be changed.</p>
                   ) : !editingInvitation && looksLikeReservedTestName(form.candidateName) ? (
-                    <p className="text-xs text-amber-700 mt-1">“Test Test” creates a free test assessment. It won’t count towards your allowance and is excluded from reports and integrations.</p>
+                    <p className="text-xs text-amber-700 mt-1">“Test Test” creates a free test assessment. To create test learners, use Create Test Candidate.</p>
                   ) : null}
                 </div>
                 <div>
@@ -1090,7 +1169,7 @@ export function CandidatesPage() {
                     id="candidate-email" type="email" required
                     value={form.candidateEmail}
                     onChange={(e) => setForm({ ...form, candidateEmail: e.target.value })}
-                    className="input" placeholder="jane.smith@example.com" disabled={submitting}
+                    className="input" placeholder="jane.smith@example.com" disabled={submitting || !!sendingTo || !!editingInvitation?.test_candidate_id}
                   />
                 </div>
               </div>

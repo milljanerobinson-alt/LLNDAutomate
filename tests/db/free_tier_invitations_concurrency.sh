@@ -71,5 +71,15 @@ tests=$(q "SELECT count(*) FROM public.assessment_invitations WHERE organisation
 [[ "$tests" == "25" && "$(used p5)" == "10" ]] || fail "C5 expected 25 tests, 10 used; got $tests / $(used p5)"
 pass "C5: 25 simultaneous Test Test invitations at 10/10 -> all accepted, usage stays 10"
 
+# C6 (Test Candidates): 25 simultaneous creations in one RTO -> 25 distinct names, numbers 1..25.
+if [[ "$(q "SELECT to_regprocedure('public.create_test_candidate(text)') IS NOT NULL")" == "t" ]]; then
+  q "INSERT INTO mt.orgs VALUES ('p6', mt.signup('p6@example.invalid', 'Parallel 6'))" >/dev/null
+  parallel 25 "SELECT mt.tc_create(mt.org('p6'), 'trainer@example.invalid')" c6
+  [[ -z "$(unexpected c6)" ]] || { unexpected c6; fail "C6 unexpected errors"; }
+  res=$(q "SELECT count(*) || '/' || count(DISTINCT candidate_name) || '/' || min(sequence_number) || '/' || max(sequence_number) FROM public.test_candidates WHERE organisation_id = mt.org('p6')")
+  [[ "$res" == "25/25/1/25" ]] || fail "C6 expected 25/25/1/25 (rows/distinct names/min/max), got $res"
+  pass "C6: 25 simultaneous Test Candidate creations -> 25 distinct names, Test Test .. Test Test25, no gaps or duplicates"
+fi
+
 rm -rf "$WORK"
 echo "ALL INVITATION CONCURRENCY CHECKS PASSED"

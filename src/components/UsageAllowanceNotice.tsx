@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, XCircle } from 'lucide-react';
+import { UpgradeOptionsButton } from './UpgradeOptionsButton';
 import { fetchPlanUsage, formatResetDate, type PlanUsageState } from '../lib/planUsage';
 
 /**
@@ -22,11 +23,16 @@ export function UsageAllowanceNoticeView({ state }: { state: PlanUsageState }) {
     return (
       <div className="rounded-xl border border-error-200 bg-error-50 p-4 flex gap-3 text-sm text-error-900" role="alert">
         <XCircle className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-        <p>
-          <span className="font-semibold">All {state.allowance} free invitations for this month are used.</span>{' '}
-          New invitations can’t be sent until {reset}. Learners already invited can still start and finish. Invitations to “Test Test” are still allowed.{' '}
-          <a className="underline font-semibold" href="#/rto-admin/billing">Plan &amp; usage</a>
-        </p>
+        <div>
+          <p className="font-semibold">You’ve used all {state.allowance} free invitations this month.</p>
+          <p className="mt-1">
+            Learners already invited can still complete their assessments. Your allowance resets on {reset}. Deleting an
+            assessment sent this month returns its invitation. Upgrading to a paid plan will allow additional assessments
+            once paid plans become available. Test Candidates are still free.{' '}
+            <a className="underline font-semibold" href="#/rto-admin/billing">Plan &amp; usage</a>
+          </p>
+          <UpgradeOptionsButton />
+        </div>
       </div>
     );
   }

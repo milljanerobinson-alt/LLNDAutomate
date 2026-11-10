@@ -94,8 +94,8 @@ describe('Plan & usage page (invitations)', () => {
   it('near limit and exhausted messages; invited learners can still finish', () => {
     expect(html(<PlanUsageView state={ok(8)} />)).toContain('Your free allowance is nearly used.');
     const full = html(<PlanUsageView state={ok(10)} />);
-    expect(full).toContain('You’ve used all 10 free invitations for this month.');
-    expect(full).toContain('New invitations can’t be sent until 1 December 2026. Learners you have already invited can still start and finish their assessments.');
+    expect(full).toContain('You’ve used all 10 free invitations this month.');
+    expect(full).toContain('Learners you have already invited can still complete their assessments. Your allowance resets on 1 December 2026.');
   });
 
   it('error states show no figures and no Active badge', () => {
@@ -111,7 +111,7 @@ describe('Plan & usage page (invitations)', () => {
   it('staff notice reflects invitation-based enforcement', () => {
     expect(html(<UsageAllowanceNoticeView state={ok(3)} />)).toBe('');
     expect(html(<UsageAllowanceNoticeView state={ok(8)} />)).toContain('resending doesn’t');
-    expect(html(<UsageAllowanceNoticeView state={ok(10)} />)).toContain('New invitations can’t be sent until 1 December 2026. Learners already invited can still start and finish.');
+    expect(html(<UsageAllowanceNoticeView state={ok(10)} />)).toContain('Learners already invited can still complete their assessments. Your allowance resets on 1 December 2026.');
   });
 
   it('public plan wording counts invitations for LLND Mate and completions for paid tiers', () => {

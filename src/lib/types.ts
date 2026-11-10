@@ -160,6 +160,8 @@ export interface AssessmentInvitation {
   is_test?: boolean;
   /** LLND Mate soft deletion (deleted rows are hidden from RTO and learner access). */
   deleted_at?: string | null;
+  /** LLND Mate: set when the invitation was sent to a server-named Test Candidate. */
+  test_candidate_id?: string | null;
   id: string;
   qualification_id: string | null;
   candidate_email: string;
