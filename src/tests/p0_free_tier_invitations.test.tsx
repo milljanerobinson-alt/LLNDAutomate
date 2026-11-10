@@ -149,7 +149,7 @@ describe('Delete dialog', () => {
     expect(c).not.toMatch(/from\('assessment_invitations'\)\.delete\(\)/);
     expect(c).not.toContain('This action cannot be undone');
     expect(c).toContain('<TestBadge />');
-    expect(c).toContain("disabled={submitting || !!editingInvitation?.is_test}");
+    expect(c).toContain("disabled={submitting || !!editingInvitation?.is_test || !!sendingTo}");
   });
 });
 
