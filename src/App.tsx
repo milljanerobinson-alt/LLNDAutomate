@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { normaliseRouteHash } from './lib/routeHash';
 import { AuthProvider, useAuth } from './lib/auth';
 import {
   useWorkspaceAccess, getLastWorkspace, getLastPage,
@@ -168,16 +169,14 @@ function Router() {
   // Must NEVER redirect to an LLND workspace (assessment/trainer).
   if (route.kind === 'root' && product === 'eios') {
     if (!user || !otpVerified) {
-      redirect('#/login');
-      return <FullScreenLoader />;
+      return redirectTo('#/login');
     }
     // Signed-in: restore valid authorised EIOS workspace
     // EIOS uses the engineering workspace. Customer workspaces belong to LLND.
     const ws = getLastWorkspace();
     const page = getLastPage(ws);
     const eiosWs = resolveEiosWorkspace(ws, profile, hasWorkspace);
-    redirect(workspaceHash(eiosWs, eiosWs === 'engineering' ? page : getLastPage(eiosWs)));
-    return <FullScreenLoader />;
+    return redirectTo(workspaceHash(eiosWs, eiosWs === 'engineering' ? page : getLastPage(eiosWs)));
   }
 
   // ─── LLND root route ─────────────────────────────────────────────────────────
@@ -208,8 +207,7 @@ function Router() {
     if (user && otpVerified) {
       const redirectParam = parseRedirectParam(hash);
       if (redirectParam && isSafeRedirect(redirectParam, product)) {
-        redirect(redirectParam);
-        return <FullScreenLoader />;
+        return redirectTo(redirectParam);
       }
       // Post-login redirect respects product context
       if (product === 'llnd') {
@@ -237,12 +235,10 @@ function Router() {
   if (!user || !otpVerified) {
     // LLND Automate product routes → LLND Automate login
     if (route.kind === 'administration' || route.kind === 'candidate-support' || route.kind === 'technical') {
-      redirect('#/llnd-automate/login');
-      return <FullScreenLoader />;
+      return redirectTo('#/llnd-automate/login');
     }
     // All other protected routes (engineering and OAuth) → EIOS login
-    redirect('#/login');
-    return <FullScreenLoader />;
+    return redirectTo('#/login');
   }
 
   // ─── Engineering workspace (EIOS product only) ──────────────────────────────
@@ -318,8 +314,7 @@ function Router() {
       return <FullScreenLoader />;
     }
     if (!hasWorkspace('administration')) {
-      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
-      return <FullScreenLoader />;
+      return redirectTo(workspaceHash(primaryWorkspace, 'dashboard'));
     }
     setLastWorkspace('administration');
     setLastPage('administration', route.page);
@@ -339,8 +334,7 @@ function Router() {
       return <FullScreenLoader />;
     }
     if (!hasWorkspace('candidate_support')) {
-      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
-      return <FullScreenLoader />;
+      return redirectTo(workspaceHash(primaryWorkspace, 'dashboard'));
     }
     setLastWorkspace('candidate_support');
     setLastPage('candidate_support', route.page);
@@ -360,8 +354,7 @@ function Router() {
       return <FullScreenLoader />;
     }
     if (!hasWorkspace('technical')) {
-      redirect(workspaceHash(primaryWorkspace, 'dashboard'));
-      return <FullScreenLoader />;
+      return redirectTo(workspaceHash(primaryWorkspace, 'dashboard'));
     }
     setLastWorkspace('technical');
     setLastPage('technical', route.page);
@@ -545,6 +538,20 @@ function redirect(hash: string) {
 }
 
 /**
+ * Redirects to another route. If the target is the route already showing, a
+ * redirect would never fire a hashchange and the loader would spin forever, so
+ * a clear "no access" screen is shown instead. Access is still enforced by the
+ * database; this only changes what the screen shows.
+ */
+function redirectTo(hash: string) {
+  if (normaliseRouteHash(window.location.hash) === normaliseRouteHash(hash)) {
+    return <NoWorkspaceAccess />;
+  }
+  redirect(hash);
+  return <FullScreenLoader />;
+}
+
+/**
  * Resolves the EIOS workspace for a signed-in user.
  * EIOS remains isolated to its Engineering workspace. LLND workspace
  * permissions never confer EIOS access.
@@ -559,6 +566,22 @@ function resolveEiosWorkspace(
   // by profiles.role. The stored workspace and profile are not consulted.
   void stored; void profile;
   return 'engineering';
+}
+
+function NoWorkspaceAccess() {
+  const { signOut } = useAuth();
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6" data-testid="no-workspace-access">
+      <div role="alert" className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+        <h1 className="text-lg font-bold text-slate-900">You don’t have access to this workspace</h1>
+        <p className="text-sm text-slate-600 mt-2">
+          Your account is signed in, but it hasn’t been given access to any workspace in this organisation.
+          Ask your organisation’s administrator to grant access, then sign in again.
+        </p>
+        <button type="button" onClick={() => { void signOut(); }} className="btn-secondary mt-5 mx-auto">Sign out</button>
+      </div>
+    </div>
+  );
 }
 
 function FullScreenLoader() {

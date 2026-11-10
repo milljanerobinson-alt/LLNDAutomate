@@ -1,0 +1,7 @@
+{
+  "_comment": "Which Supabase projects each kind of build may use. Read by scripts/build-env-guard.mjs at build time. Previews may only use projects listed under preview; an empty list means preview builds fail. Changing this file needs Product Owner approval.",
+  "productionBranch": "main",
+  "production": ["clrsckerimjturebulbk"],
+  "preview": [],
+  "protected": ["clrsckerimjturebulbk"]
+}
